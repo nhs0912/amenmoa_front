@@ -25,6 +25,20 @@ iOS 빌드 중 `resource fork, Finder information, or similar detritus not allow
 
 iOS에는 Xcode, Android에는 Android SDK가 필요합니다. iPhone 실기기는 개발자 서명 설정도 필요합니다.
 
+## 시작과 로그인 화면
+
+앱을 완전히 새로 실행하면 네이티브 시작 로고 다음에 Flutter 로고 시작 화면을 최소 1.6초 표시합니다. 이 동안 `SessionRepository.restoreSession()`으로 세션을 복원합니다.
+
+- 유효한 인증 세션: 홈으로 이동
+- 비로그인 또는 만료된 세션: 로그인 화면으로 이동
+- 세션 복원 실패/10초 시간 초과: 로그인 화면에서 다시 확인 가능
+- `기기 저장 모드로 둘러보기`: 이번 실행에서만 홈을 열며 로그인 상태를 만들지 않음
+- 프로필의 `로그인 화면으로`: 기기 데이터를 보존하고 로그인 화면으로 복귀
+
+현재 인증 서비스는 미연결이라 기본 `UnconfiguredSessionRepository`는 비로그인 상태를 반환합니다. 소셜/이메일 로그인 버튼도 준비 중으로 비활성화되어 있습니다. 서비스 연결 시 서버에서 검증한 세션을 반환하는 `SessionRepository` 구현을 앱에 주입해야 합니다. SharedPreferences의 기도 기록이나 임의 boolean을 로그인으로 취급하지 않습니다.
+
+시작 화면/홈 상단 로고는 제공된 스토리보드에서 추출한 원본 이미지를 사용합니다. Android 12 이상 시스템 스플래시, 이전 Android 시작 화면, iOS LaunchScreen에도 같은 로고와 크림색 배경을 적용했습니다.
+
 ## 현재 동작
 
 - 홈에서 오늘 기도 시간과 매일 60분 목표 확인
@@ -65,6 +79,6 @@ flutter test
 flutter build web --release
 ```
 
-테스트는 작은 화면·1.6배 글씨에서 5개 메뉴 이동, 기도 기록 복원과 중복 방지, 타이머 일시정지·재개·저장을 검증합니다.
+테스트는 로고 시작 화면에서 비로그인/유효/만료/복원 오류 상태별 이동, 기기 저장 모드의 비영속성, 작은 화면·1.6배 글씨, 5개 메뉴 이동, 기도 기록 복원과 중복 방지, 타이머 일시정지·재개·저장을 검증합니다.
 
 `lib/features/experience/experience.dart`에 현재 기기 저장 모델과 연결된 화면이 있습니다. `lib/app/app_shell.dart`가 5개 탭을 구성하고 `lib/app/theme/app_theme.dart`가 공통 테마를 정의합니다.

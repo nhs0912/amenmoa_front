@@ -1,4 +1,4 @@
-import 'package:amenmoa_front/app/app.dart';
+import 'package:amenmoa_front/app/app_shell.dart';
 import 'package:amenmoa_front/features/experience/experience.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,7 +14,7 @@ void main() {
     tester.platformDispatcher.textScaleFactorTestValue = 1.6;
     addTearDown(tester.view.reset);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    await tester.pumpWidget(const AmenMoaApp());
+    await tester.pumpWidget(const MaterialApp(home: AppShell()));
     await tester.pumpAndSettle();
     expect(find.text('혼자 시작해도, 함께'), findsOneWidget);
     for (final pair in {

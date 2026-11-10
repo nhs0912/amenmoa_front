@@ -1276,8 +1276,9 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
 }
 
 class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({super.key, required this.store});
+  const ProfileScreen({super.key, required this.store, this.onExitToLogin});
   final PrayerStore store;
+  final VoidCallback? onExitToLogin;
   @override
   Widget build(BuildContext context) => PageBody(
     title: '내 프로필',
@@ -1361,6 +1362,12 @@ class ProfileScreen extends StatelessWidget {
           unawaited(store.save());
         },
       ),
+      if (onExitToLogin != null)
+        OutlinedButton.icon(
+          onPressed: onExitToLogin,
+          icon: const Icon(Icons.login),
+          label: const Text('로그인 화면으로'),
+        ),
       const Paper(
         color: sage,
         child: Text(

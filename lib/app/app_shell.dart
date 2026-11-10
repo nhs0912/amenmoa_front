@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../features/experience/experience.dart';
+import '../features/auth/presentation/brand_logo.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  const AppShell({super.key, this.onExitToLogin});
+  final VoidCallback? onExitToLogin;
   @override
   State<AppShell> createState() => _AppShellState();
 }
@@ -38,7 +40,7 @@ class _AppShellState extends State<AppShell> {
         appBar: AppBar(
           title: const Row(
             children: [
-              Icon(Icons.volunteer_activism, size: 24),
+              BrandLogo(size: 28),
               SizedBox(width: 10),
               Text('아멘모아', style: TextStyle(fontWeight: FontWeight.w800)),
             ],
@@ -61,7 +63,10 @@ class _AppShellState extends State<AppShell> {
                 GroupsScreen(store: store),
                 PrayerScreen(store: store),
                 RecordsScreen(store: store),
-                ProfileScreen(store: store),
+                ProfileScreen(
+                  store: store,
+                  onExitToLogin: widget.onExitToLogin,
+                ),
               ][selected],
             ),
           ),
