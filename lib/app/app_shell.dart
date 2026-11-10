@@ -1,64 +1,95 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-import '../features/groups/presentation/groups_page.dart';
-import '../features/home/presentation/home_page.dart';
-import '../features/prayer_requests/presentation/prayer_requests_page.dart';
-import '../features/profile/presentation/profile_page.dart';
+import '../features/experience/experience.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
-
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
-  int _selectedIndex = 0;
-
-  static const _pages = [
-    HomePage(),
-    GroupsPage(),
-    PrayerRequestsPage(),
-    ProfilePage(),
-  ];
+  final store = PrayerStore();
+  int selected = 0;
+  @override
+  void initState() {
+    super.initState();
+    unawaited(store.load());
+  }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('아멘모아')),
-      body: SafeArea(
-        child: SelectionArea(
-          child: IndexedStack(index: _selectedIndex, children: _pages),
+  void dispose() {
+    store.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: store,
+    builder: (context, _) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        textScaler: TextScaler.linear(
+          MediaQuery.textScalerOf(context).scale(1) * store.textScale,
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) {
-          setState(() => _selectedIndex = index);
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: '홈',
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Row(
+            children: [
+              Icon(Icons.volunteer_activism, size: 24),
+              SizedBox(width: 10),
+              Text('아멘모아', style: TextStyle(fontWeight: FontWeight.w800)),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.groups_outlined),
-            selectedIcon: Icon(Icons.groups),
-            label: '모임',
+          actions: [
+            IconButton(
+              tooltip: '알림',
+              onPressed: () => openPage(context, const NotificationsPage()),
+              icon: const Icon(Icons.notifications_none),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 680),
+              child: [
+                HomeScreen(store: store),
+                GroupsScreen(store: store),
+                PrayerScreen(store: store),
+                RecordsScreen(store: store),
+                ProfileScreen(store: store),
+              ][selected],
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.volunteer_activism_outlined),
-            selectedIcon: Icon(Icons.volunteer_activism),
-            label: '기도제목',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: '프로필',
-          ),
-        ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: selected,
+          onDestinationSelected: (value) => setState(() => selected = value),
+          destinations: const [
+            NavigationDestination(icon: Icon(Icons.home_outlined), label: '홈'),
+            NavigationDestination(
+              icon: Icon(Icons.groups_outlined),
+              label: '그룹',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.volunteer_activism_outlined),
+              label: '기도',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.calendar_month_outlined),
+              label: '기록',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              label: '프로필',
+            ),
+          ],
+        ),
       ),
-    );
-  }
+    ),
+  );
 }
