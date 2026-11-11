@@ -42,11 +42,27 @@ class PrayerEntry {
 }
 
 class PrayerStore extends ChangeNotifier {
+  PrayerStore({String? userId})
+    : _prefix = userId == null ? '' : 'account:$userId:',
+      name = userId == null ? '서윤' : '나';
+  final String _prefix;
+  bool _disposed = false;
+  String _key(String name) => '$_prefix$name';
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   List<PrayerEntry> entries = [];
   List<String> groups = ['새봄 셀', '가족 기도방', '우리 교회'];
   List<String> topics = ['하루를 시작하는 감사', '가족의 평안', '이웃의 회복을 위해'];
   List<String> schedules = [];
-  String name = '서윤';
+  String name;
   double textScale = 1;
   bool reminders = true;
   bool loaded = false;
@@ -55,20 +71,20 @@ class PrayerStore extends ChangeNotifier {
   Future<void> load() async {
     try {
       final p = await SharedPreferences.getInstance();
-      entries = (jsonDecode(p.getString('entries') ?? '[]') as List)
+      entries = (jsonDecode(p.getString(_key('entries')) ?? '[]') as List)
           .map((v) => PrayerEntry.fromJson(v as Map<String, dynamic>))
           .toList();
-      groups = p.getStringList('groups') ?? groups;
-      topics = p.getStringList('topics') ?? topics;
-      schedules = p.getStringList('schedules') ?? schedules;
-      name = p.getString('name') ?? name;
-      textScale = p.getDouble('textScale') ?? 1;
-      reminders = p.getBool('reminders') ?? true;
+      groups = p.getStringList(_key('groups')) ?? groups;
+      topics = p.getStringList(_key('topics')) ?? topics;
+      schedules = p.getStringList(_key('schedules')) ?? schedules;
+      name = p.getString(_key('name')) ?? name;
+      textScale = p.getDouble(_key('textScale')) ?? 1;
+      reminders = p.getBool(_key('reminders')) ?? true;
     } catch (_) {
       error = '저장한 정보를 불러오지 못했어요. 다시 실행해 주세요.';
     }
     loaded = true;
-    notifyListeners();
+    _notify();
   }
 
   Future<void> save() {
@@ -83,13 +99,13 @@ class PrayerStore extends ChangeNotifier {
       try {
         final p = await SharedPreferences.getInstance();
         final results = await Future.wait([
-          p.setString('entries', snapshot),
-          p.setStringList('groups', savedGroups),
-          p.setStringList('topics', savedTopics),
-          p.setStringList('schedules', savedSchedules),
-          p.setString('name', savedName),
-          p.setDouble('textScale', savedScale),
-          p.setBool('reminders', savedReminders),
+          p.setString(_key('entries'), snapshot),
+          p.setStringList(_key('groups'), savedGroups),
+          p.setStringList(_key('topics'), savedTopics),
+          p.setStringList(_key('schedules'), savedSchedules),
+          p.setString(_key('name'), savedName),
+          p.setDouble(_key('textScale'), savedScale),
+          p.setBool(_key('reminders'), savedReminders),
         ]);
         error = results.every((v) => v)
             ? null
@@ -97,9 +113,9 @@ class PrayerStore extends ChangeNotifier {
       } catch (_) {
         error = '기기에 저장하지 못했어요. 저장 공간을 확인해 주세요.';
       }
-      notifyListeners();
+      _notify();
     });
-    notifyListeners();
+    _notify();
     return _writes;
   }
 
@@ -1276,9 +1292,19 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
 }
 
 class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({super.key, required this.store, this.onExitToLogin});
+  const ProfileScreen({
+    super.key,
+    required this.store,
+    this.onExitToLogin,
+    this.accountEmail,
+    this.authenticated = false,
+    this.signingOut = false,
+  });
   final PrayerStore store;
   final VoidCallback? onExitToLogin;
+  final String? accountEmail;
+  final bool authenticated;
+  final bool signingOut;
   @override
   Widget build(BuildContext context) => PageBody(
     title: '내 프로필',
@@ -1298,7 +1324,12 @@ class ProfileScreen extends StatelessWidget {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [heading(store.name), note('기기 저장 프로필')],
+                children: [
+                  heading(store.name),
+                  note(
+                    authenticated ? (accountEmail ?? '이메일 계정') : '기기 저장 프로필',
+                  ),
+                ],
               ),
             ),
             IconButton(
@@ -1364,14 +1395,22 @@ class ProfileScreen extends StatelessWidget {
       ),
       if (onExitToLogin != null)
         OutlinedButton.icon(
-          onPressed: onExitToLogin,
-          icon: const Icon(Icons.login),
-          label: const Text('로그인 화면으로'),
+          onPressed: signingOut ? null : onExitToLogin,
+          icon: Icon(authenticated ? Icons.logout : Icons.login),
+          label: Text(
+            signingOut
+                ? '로그아웃 중'
+                : authenticated
+                ? '로그아웃'
+                : '로그인 화면으로',
+          ),
         ),
-      const Paper(
+      Paper(
         color: sage,
         child: Text(
-          '아멘모아 · 기기 저장 모드\n\n기도 기록·기도제목·프로필·예약을 이 기기에 저장합니다. 계정 인증, 클라우드 동기화, 실시간 기도방과 푸시 알림은 서버 연결 전입니다. 앱 데이터 삭제 시 기록도 삭제됩니다.',
+          authenticated
+              ? '이메일 계정으로 로그인했어요.\n\n기도 기록은 이 기기에 보관돼요. 로그아웃해도 지워지지 않으며 같은 계정으로 로그인하면 다시 볼 수 있어요. 클라우드 동기화와 실시간 공동 기도는 준비 중이에요.'
+              : '아멘모아 · 기기 저장 모드\n\n기도 기록·기도제목·프로필·예약을 이 기기에 저장합니다. 로그인하면 계정별 기기 기록을 사용할 수 있어요. 앱 데이터 삭제 시 기록도 삭제됩니다.',
         ),
       ),
     ],

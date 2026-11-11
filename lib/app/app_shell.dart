@@ -6,18 +6,28 @@ import '../features/experience/experience.dart';
 import '../features/auth/presentation/brand_logo.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, this.onExitToLogin});
+  const AppShell({
+    super.key,
+    this.onExitToLogin,
+    this.userId,
+    this.accountEmail,
+    this.signingOut = false,
+  });
   final VoidCallback? onExitToLogin;
+  final String? userId;
+  final String? accountEmail;
+  final bool signingOut;
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
-  final store = PrayerStore();
+  late final PrayerStore store;
   int selected = 0;
   @override
   void initState() {
     super.initState();
+    store = PrayerStore(userId: widget.userId);
     unawaited(store.load());
   }
 
@@ -66,6 +76,9 @@ class _AppShellState extends State<AppShell> {
                 ProfileScreen(
                   store: store,
                   onExitToLogin: widget.onExitToLogin,
+                  accountEmail: widget.accountEmail,
+                  authenticated: widget.userId != null,
+                  signingOut: widget.signingOut,
                 ),
               ][selected],
             ),

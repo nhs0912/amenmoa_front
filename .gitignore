@@ -59,3 +59,6 @@ android/key.properties
 *.keystore
 *.p12
 *.mobileprovision
+
+# Local public auth project settings
+config/auth.local.json

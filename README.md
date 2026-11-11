@@ -1,10 +1,10 @@
 # 아멘모아 · AmenMoa
 
-스토리보드의 포레스트 그린·크림색 디자인과 홈 / 그룹 / 기도 / 기록 / 프로필을 구현한 Flutter 앱입니다.
+Flutter로 만드는 아멘모아입니다. 로고 시작 화면, 이메일 가입·인증·로그인, 로그인 유지, 홈 / 그룹 / 기도 / 기록 / 프로필을 연결했습니다.
 
 ## 실행
 
-Flutter **3.47.9 stable** / Dart **3.13.7** 기준입니다. 프로젝트 루트에서 실행하세요.
+Flutter **3.47.9 stable** / Dart **3.13.7** 기준입니다.
 
 ```bash
 git clone --branch dev https://github.com/nhs0912/amenmoa_front.git
@@ -13,62 +13,65 @@ flutter pub get
 flutter run -d chrome
 ```
 
-기기 실행은 Android 에뮬레이터 또는 iOS 시뮬레이터를 켠 뒤 진행합니다.
+인증 설정 없이도 화면과 기기 저장 모드를 확인할 수 있습니다. 이메일 로그인/가입 버튼은 활성화되어 있지만 실제 메일 전송과 계정 인증에는 아래 Supabase 설정이 필요합니다. 설정이 없을 때 메일을 보냈다고 표시하거나 가짜 계정으로 로그인하지 않습니다.
+
+## 실제 이메일 인증 연결
+
+1. Supabase 프로젝트에서 Email provider와 **Confirm email**을 켭니다. 이메일 확인을 끄면 이 앱은 가입 즉시 발급되는 세션을 거부합니다.
+2. Email OTP 길이를 **6자리**로 설정합니다. Authentication의 **Confirm signup** 메일 템플릿에 `supabase/templates/confirmation.html`을 적용합니다. 템플릿은 `{{ .Token }}` 인증코드를 표시합니다. 앱은 링크 대신 이메일과 코드로 인증하므로 앱 딥링크 설정은 필요하지 않습니다.
+3. 실제 사용자에게 발송하려면 Supabase의 custom SMTP와 발신 주소를 설정합니다. 기본 발송 서비스에는 수신자와 발송 횟수 제한이 있어 일반 사용자용 발송을 보장하지 않습니다.
+4. `config/auth.example.json`을 `config/auth.local.json`으로 복사하고 Project URL과 **publishable key**를 입력합니다. 이전 프로젝트의 anon key는 `SUPABASE_ANON_KEY`로도 지원합니다. secret/service-role 키는 앱에서 사용하지 않습니다.
+
+```bash
+flutter run -d chrome --dart-define-from-file=config/auth.local.json
+
+# Android 에뮬레이터 예시 (flutter devices에서 ID 확인)
+flutter emulators --launch Pixel_3a_API_34
+flutter run -d emulator-5554 --dart-define-from-file=config/auth.local.json
+
+# 실제 서비스 설정을 포함한 웹 빌드
+flutter build web --release --dart-define-from-file=config/auth.local.json
+```
+
+로컬 설정 파일은 Git에서 제외됩니다. SMTP 비밀번호와 Supabase secret/service-role 키는 이 파일이나 앱 코드에 넣지 않습니다. CI의 기본 빌드는 인증 서비스 설정 없이 수행합니다.
+
+공식 설정 문서: [이메일 템플릿](https://supabase.com/docs/guides/auth/auth-email-templates), [SMTP](https://supabase.com/docs/guides/auth/auth-smtp), [세션 유지](https://supabase.com/docs/guides/auth/sessions).
+
+## 가입·로그인 흐름
+
+- 앱을 새로 실행하면 네이티브 로고에 이어 Flutter 시작 화면을 최소 1.6초 표시합니다.
+- 저장한 세션이 유효하면 홈을 엽니다. 토큰이 만료되었으면 갱신하고, 서버에서 인증된 이메일 계정인지 확인합니다.
+- 비로그인이면 **아멘모아 시작하기**로 이동합니다.
+- **이메일로 로그인**: 이메일과 비밀번호를 입력합니다.
+- **이메일로 가입**: 이메일·비밀번호(8자 이상)·비밀번호 확인을 입력하고 인증 메일을 요청합니다.
+- **이메일 인증**: 메일의 6자리 인증코드를 입력합니다. 서버 인증이 성공한 경우에만 가입 완료 상태로 홈을 열고 로그인 상태를 저장합니다.
+- 틀리거나 만료된 코드는 오류를 표시하며, 60초 뒤 인증 메일을 다시 요청할 수 있습니다. 이메일 주소 수정 시 비밀번호는 다시 입력합니다.
+- **프로필 → 로그아웃**: 이 기기의 저장 세션과 메모리 세션을 해제하고 아멘모아 시작하기로 돌아옵니다. 로그아웃 뒤 재실행해도 자동 로그인되지 않습니다.
+- **기기 저장 모드로 둘러보기**: 계정 로그인 없이 기존 기능을 확인합니다. 프로필의 **로그인 화면으로**에서 돌아갈 수 있습니다.
+
+비밀번호와 인증코드는 앱 저장소에 저장하지 않습니다. 네이티브에서는 Keychain/Keystore 기반 저장소에 인증 세션을 보관합니다. 웹은 HTTPS(또는 localhost)와 브라우저 보안 저장소 구현을 사용하며 네이티브 Keychain과 같은 격리는 제공하지 않습니다. 네트워크 일시 오류로 갱신에 실패해도 저장한 refresh token을 지우지 않고 재시도합니다. 로그아웃, 서버의 세션 취소, 갱신 토큰 만료 시에는 다시 로그인해야 합니다.
+
+## 기도 기록
+
+기도 타이머(시작·일시정지·재개·종료), 메모, 달력, 날짜별 기록, 직접 기록·삭제, 개인 목표, 기도 예약, 기도제목·그룹 생성, 프로필 이름·글씨 크기를 기기에 저장합니다. 한 기도 세션을 중복 저장해도 한 번만 합산합니다.
+
+로그인 계정의 기도 기록·프로필은 사용자 ID별로 저장합니다. 다른 계정이나 둘러보기 모드에서 해당 기록을 표시하지 않습니다. 로그아웃해도 기록은 유지되며 같은 계정으로 재로그인하면 다시 확인할 수 있습니다. 기존 둘러보기 기록은 기존 저장 위치에 그대로 남습니다. 클라우드 기도 기록 동기화는 아직 구현하지 않았습니다.
+
+## 남은 기능
+
+카카오 / Google / Apple 로그인, 비밀번호 초기화, QR 초대·그룹 가입, 실제 멤버·댓글·친구 약속·톡톡, 실시간 기도방, 그룹 공동 목표 집계, 푸시·예약 자동 알림, 잠금 화면 활동과 기록 동기화는 아직 연결되지 않았습니다. 초기 그룹과 기도방은 예시입니다. 예약과 알림 선호를 저장해도 기기 알림을 발송하지 않습니다. 타이머는 종료 시 저장되며 앱 강제 종료 시 진행 중인 시간은 복구되지 않습니다.
+
+## 플랫폼 실행
 
 ```bash
 flutter doctor
 flutter devices
-flutter run -d <device-id>
+flutter run -d <device-id> --dart-define-from-file=config/auth.local.json
 ```
 
-iOS 빌드 중 `resource fork, Finder information, or similar detritus not allowed`가 나오면 Documents/iCloud 폴더의 파일 속성 때문에 Flutter 엔진 서명이 실패한 경우입니다. 동기화되지 않는 로컬 개발 폴더(예: `~/Developer/amenmoa_front`)에 새로 clone해서 실행하세요. 이 작업에서는 파일 속성 없는 `/private/tmp/amenmoa-native-verify` 복사본으로 iOS를 검증합니다.
+iOS는 Xcode, Android는 Android SDK가 필요합니다. iPhone 실기기는 개발자 서명도 필요합니다. iOS 빌드 중 `resource fork, Finder information, or similar detritus not allowed`가 나오면 Documents/iCloud의 파일 속성 때문에 엔진 서명이 실패했을 수 있으므로 동기화되지 않는 개발 폴더에 새로 clone하세요.
 
-iOS에는 Xcode, Android에는 Android SDK가 필요합니다. iPhone 실기기는 개발자 서명 설정도 필요합니다.
-
-## 시작과 로그인 화면
-
-앱을 완전히 새로 실행하면 네이티브 시작 로고 다음에 Flutter 로고 시작 화면을 최소 1.6초 표시합니다. 이 동안 `SessionRepository.restoreSession()`으로 세션을 복원합니다.
-
-- 유효한 인증 세션: 홈으로 이동
-- 비로그인 또는 만료된 세션: 로그인 화면으로 이동
-- 세션 복원 실패/10초 시간 초과: 로그인 화면에서 다시 확인 가능
-- `기기 저장 모드로 둘러보기`: 이번 실행에서만 홈을 열며 로그인 상태를 만들지 않음
-- 프로필의 `로그인 화면으로`: 기기 데이터를 보존하고 로그인 화면으로 복귀
-
-현재 인증 서비스는 미연결이라 기본 `UnconfiguredSessionRepository`는 비로그인 상태를 반환합니다. 소셜/이메일 로그인 버튼도 준비 중으로 비활성화되어 있습니다. 서비스 연결 시 서버에서 검증한 세션을 반환하는 `SessionRepository` 구현을 앱에 주입해야 합니다. SharedPreferences의 기도 기록이나 임의 boolean을 로그인으로 취급하지 않습니다.
-
-시작 화면/홈 상단 로고는 제공된 스토리보드에서 추출한 원본 이미지를 사용합니다. Android 12 이상 시스템 스플래시, 이전 Android 시작 화면, iOS LaunchScreen에도 같은 로고와 크림색 배경을 적용했습니다.
-
-## 현재 동작
-
-- 홈에서 오늘 기도 시간과 매일 60분 목표 확인
-- 5개 하단 메뉴와 상세 화면 탐색
-- 그룹 생성, 그룹별 화면, 기도제목 추가와 선택
-- 기도 타이머 시작 / 일시정지 / 재개 / 마치기 / 메모
-- 타이머가 화면 갱신 횟수 대신 Stopwatch의 실제 경과 시간을 측정
-- 한 세션을 중복 저장해도 누적 시간에 한 번만 반영
-- 기도 기록 달력, 날짜 선택, 이전/다음 달, 직접 기록과 삭제
-- 이번 주 개인 기록을 집계하는 목표 화면
-- 미래 날짜·시간의 기도 예약을 기기에 저장
-- 프로필 이름·글씨 크기·알림 수신 선호 저장
-- SharedPreferences를 통한 기도 기록·기도제목·그룹·프로필·예약 복원
-- SafeArea, 스크롤 가능한 폼, 작은 화면과 큰 글씨 지원
-
-## 서버 연동 범위
-
-현재는 **기기 저장 모드**입니다. 초기 그룹과 기도제목은 예시이며, 라이브 기도방은 미리보기입니다. 서버 수치나 다른 사용자의 활동을 실제 데이터로 표시하지 않습니다.
-
-다음 기능은 서버 및 서비스 설정이 필요하며 아직 구현되지 않았습니다.
-
-- 카카오 / Google / Apple / 이메일 가입·인증·로그인·세션과 비밀번호 재설정
-- QR 초대·딥링크·그룹 가입 및 멤버 권한
-- 실시간 참여자·공동 기도방·친구 약속과 톡톡
-- 그룹 목표·목표기도방 공동 집계
-- 푸시 알림·예약 자동 알림·백그라운드 종료 알림
-- 서버 동기화, 사진 업로드, 댓글, 기도제목별 개별 타이머
-- 잠금 화면 Live Activities / Android 진행 알림
-
-예약과 알림 선호를 저장해도 기기 알림을 발송하지 않습니다. 타이머는 종료 시 저장되며 앱 강제 종료 시 진행 중인 시간은 복구되지 않습니다. 앱 데이터 삭제 시 기기 기록도 삭제됩니다.
+시작 로고는 제공된 스토리보드의 원본 이미지를 사용합니다. Android 12 이상·이전 버전과 iOS LaunchScreen에 같은 로고·크림색 배경을 적용했습니다. 입력 폼은 SafeArea와 스크롤·키보드 여백을 사용합니다.
 
 ## 검사
 
@@ -77,8 +80,7 @@ dart format --output=none --set-exit-if-changed lib test
 dart analyze lib test
 flutter test
 flutter build web --release
+flutter build apk --debug
 ```
 
-테스트는 로고 시작 화면에서 비로그인/유효/만료/복원 오류 상태별 이동, 기기 저장 모드의 비영속성, 작은 화면·1.6배 글씨, 5개 메뉴 이동, 기도 기록 복원과 중복 방지, 타이머 일시정지·재개·저장을 검증합니다.
-
-`lib/features/experience/experience.dart`에 현재 기기 저장 모델과 연결된 화면이 있습니다. `lib/app/app_shell.dart`가 5개 탭을 구성하고 `lib/app/theme/app_theme.dart`가 공통 테마를 정의합니다.
+화면·입력 검증·인증 흐름은 테스트용 인증 저장소로 검증하며, 실제 메일 전송은 서비스 설정과 실제 수신 주소가 있어야 확인할 수 있습니다. 테스트는 가짜 성공을 제품에 사용하지 않습니다.

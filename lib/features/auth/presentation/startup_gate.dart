@@ -6,6 +6,7 @@ import '../../../app/app_shell.dart';
 import '../../../app/theme/app_theme.dart';
 import '../domain/session_repository.dart';
 import 'brand_logo.dart';
+import 'email_auth_pages.dart';
 
 class StartupGate extends StatefulWidget {
   const StartupGate({
@@ -21,24 +22,58 @@ class StartupGate extends StatefulWidget {
   State<StartupGate> createState() => _StartupGateState();
 }
 
-class _StartupGateState extends State<StartupGate> {
+class _StartupGateState extends State<StartupGate> with WidgetsBindingObserver {
   bool _loading = true;
   bool _guest = false;
   bool _signingOut = false;
+  bool _refreshing = false;
+  int _sessionVersion = 0;
   AppSession? _session;
   String? _error;
   Timer? _expiryTimer;
+  StreamSubscription<AppSession?>? _sessionSubscription;
+
+  EmailAuthRepository get _emailAuth =>
+      widget.sessionRepository is EmailAuthRepository
+      ? widget.sessionRepository as EmailAuthRepository
+      : const UnconfiguredSessionRepository();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _sessionSubscription = _emailAuth.sessionChanges.listen(
+      (session) {
+        // Signing in and verifying email open the home only after their request
+        // completes successfully. Later events renew or invalidate that session.
+        if (!mounted || _loading || _signingOut || _session == null) return;
+        if (session == null) {
+          _showSignedOut('로그인이 해제됐어요. 다시 로그인해 주세요.');
+        } else if (session.isValid) {
+          setState(() => _session = session);
+          _scheduleSessionCheck();
+        }
+      },
+      onError: (Object _) {
+        // A temporary network failure must not erase persistent credentials.
+      },
+    );
     unawaited(_restore());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _expiryTimer?.cancel();
+    unawaited(_sessionSubscription?.cancel());
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_loading && _session != null) {
+      unawaited(_refreshSession());
+    }
   }
 
   Future<void> _restore() async {
@@ -62,30 +97,80 @@ class _StartupGateState extends State<StartupGate> {
       _loading = false;
       _error = error;
     });
-    if (_session != null) {
-      _expiryTimer = Timer(_session!.expiresAt.difference(DateTime.now()), () {
-        if (mounted) {
-          setState(() {
-            _session = null;
-            _error = '로그인 시간이 만료됐어요. 다시 로그인해 주세요.';
-          });
-        }
-      });
+    _scheduleSessionCheck();
+  }
+
+  void _scheduleSessionCheck() {
+    _expiryTimer?.cancel();
+    if (_session == null) return;
+    final remaining = _session!.expiresAt.difference(DateTime.now());
+    _expiryTimer = Timer(
+      remaining.isNegative ? Duration.zero : remaining,
+      () => unawaited(_refreshSession()),
+    );
+  }
+
+  Future<void> _refreshSession() async {
+    if (_refreshing || _signingOut || _session == null) return;
+    _refreshing = true;
+    final version = _sessionVersion;
+    try {
+      final session = await widget.sessionRepository.restoreSession().timeout(
+        const Duration(seconds: 10),
+      );
+      if (!mounted || version != _sessionVersion || _signingOut) return;
+      if (session == null || !session.isValid) {
+        _showSignedOut('로그인 시간이 만료됐어요. 다시 로그인해 주세요.');
+      } else {
+        setState(() => _session = session);
+        _scheduleSessionCheck();
+      }
+    } catch (_) {
+      if (mounted && version == _sessionVersion && _session != null) {
+        // Let the service retry its refresh after reconnecting. No password is
+        // needed and the stored refresh credential is kept on network errors.
+        _expiryTimer?.cancel();
+        _expiryTimer = Timer(
+          const Duration(seconds: 30),
+          () => unawaited(_refreshSession()),
+        );
+      }
+    } finally {
+      _refreshing = false;
     }
+  }
+
+  void _showSignedOut(String? error) {
+    _sessionVersion++;
+    _expiryTimer?.cancel();
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    setState(() {
+      _session = null;
+      _guest = false;
+      _error = error;
+    });
+  }
+
+  void _completeSignIn(AppSession session) {
+    if (!mounted || !session.isValid) return;
+    _sessionVersion++;
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    setState(() {
+      _session = session;
+      _guest = false;
+      _error = null;
+    });
+    _scheduleSessionCheck();
   }
 
   Future<void> _exitToLogin() async {
     if (_signingOut) return;
-    _signingOut = true;
+    setState(() => _signingOut = true);
+    _sessionVersion++;
     try {
       if (_session != null) await widget.sessionRepository.signOut();
       if (!mounted) return;
-      _expiryTimer?.cancel();
-      setState(() {
-        _session = null;
-        _guest = false;
-        _error = null;
-      });
+      _showSignedOut(null);
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -93,20 +178,44 @@ class _StartupGateState extends State<StartupGate> {
         );
       }
     } finally {
-      _signingOut = false;
+      if (mounted) setState(() => _signingOut = false);
     }
+  }
+
+  void _openEmailPage({required bool signUp}) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => signUp
+            ? EmailSignUpPage(
+                repository: _emailAuth,
+                onAuthenticated: _completeSignIn,
+              )
+            : EmailLoginPage(
+                repository: _emailAuth,
+                onAuthenticated: _completeSignIn,
+              ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) return const StartupSplash();
     if (_session != null || _guest) {
-      return AppShell(onExitToLogin: _exitToLogin);
+      return AppShell(
+        key: ValueKey(_session?.userId ?? 'guest'),
+        userId: _session?.userId,
+        accountEmail: _session?.email,
+        signingOut: _signingOut,
+        onExitToLogin: _exitToLogin,
+      );
     }
     return LoginScreen(
       error: _error,
       onRetry: _restore,
       onBrowse: () => setState(() => _guest = true),
+      onEmailLogin: () => _openEmailPage(signUp: false),
+      onEmailSignUp: () => _openEmailPage(signUp: true),
     );
   }
 }
@@ -171,11 +280,15 @@ class LoginScreen extends StatelessWidget {
     super.key,
     required this.onBrowse,
     required this.onRetry,
+    required this.onEmailLogin,
+    required this.onEmailSignUp,
     this.error,
   });
 
   final VoidCallback onBrowse;
   final VoidCallback onRetry;
+  final VoidCallback onEmailLogin;
+  final VoidCallback onEmailSignUp;
   final String? error;
 
   @override
@@ -225,12 +338,12 @@ class LoginScreen extends StatelessWidget {
                 const SizedBox(height: 12),
               ],
               const Text(
-                '계정 로그인은 준비 중이에요.',
+                '이메일로 가입하거나 로그인해 주세요.',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
               const Text(
-                '지금은 기기 저장 모드로 기도와 기록을 시작할 수 있어요.',
+                '한 번 로그인하면 다음에도 편하게 이어갈 수 있어요.',
                 style: TextStyle(color: Color(0xFF6C7E74), height: 1.6),
               ),
               const SizedBox(height: 20),
@@ -246,9 +359,16 @@ class LoginScreen extends StatelessWidget {
               const SizedBox(height: 10),
               const _LoginOption(label: 'Apple로 계속하기', icon: Icons.apple),
               const SizedBox(height: 10),
-              const _LoginOption(label: '이메일로 로그인', icon: Icons.mail_outline),
+              _LoginOption(
+                label: '이메일로 로그인',
+                icon: Icons.mail_outline,
+                onPressed: onEmailLogin,
+              ),
               const SizedBox(height: 8),
-              const TextButton(onPressed: null, child: Text('이메일로 가입')),
+              TextButton(
+                onPressed: onEmailSignUp,
+                child: const Text('이메일로 가입'),
+              ),
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
                 child: Divider(),
@@ -279,14 +399,15 @@ class LoginScreen extends StatelessWidget {
 }
 
 class _LoginOption extends StatelessWidget {
-  const _LoginOption({required this.label, required this.icon});
+  const _LoginOption({required this.label, required this.icon, this.onPressed});
 
   final String label;
   final IconData icon;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) => OutlinedButton.icon(
-    onPressed: null,
+    onPressed: onPressed,
     icon: Icon(icon, size: 20),
     label: Text(label),
     style: OutlinedButton.styleFrom(
