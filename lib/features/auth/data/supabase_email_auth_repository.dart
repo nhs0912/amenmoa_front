@@ -6,11 +6,18 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../domain/session_repository.dart';
 import 'secure_session_storage.dart';
 
-class SupabaseEmailAuthRepository implements EmailAuthRepository {
-  SupabaseEmailAuthRepository({required this.client, required this.storage});
+class SupabaseEmailAuthRepository
+    implements EmailAuthRepository, EmailVerificationPolicy {
+  SupabaseEmailAuthRepository({
+    required this.client,
+    required this.storage,
+    this.emailVerificationMethod = EmailVerificationMethod.code,
+  });
 
   final SupabaseClient client;
   final SecureSessionStorage storage;
+  @override
+  final EmailVerificationMethod emailVerificationMethod;
   bool _allowSessionEvents = false;
   static const _requestTimeout = Duration(seconds: 10);
 

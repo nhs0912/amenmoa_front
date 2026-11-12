@@ -8,10 +8,24 @@ import 'supabase_email_auth_repository.dart';
 
 /// Public, app-side configuration only. Never pass a Supabase secret/service key.
 Future<SessionRepository> createSessionRepository() async {
-  const url = String.fromEnvironment('SUPABASE_URL');
+  const url = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: 'https://hgytwbzapltumfdyqkkw.supabase.co',
+  );
   const publishableKey = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+  const verificationMethod = String.fromEnvironment(
+    'EMAIL_VERIFICATION_METHOD',
+    defaultValue: 'link',
+  );
   const legacyAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
-  final key = publishableKey.isNotEmpty ? publishableKey : legacyAnonKey;
+  // This is a public frontend key, not a Supabase secret/service-role key.
+  const defaultPublishableKey =
+      'sb_publishable_q4kFMuw9r85zqWCp09UdfA_j15TLKeQ';
+  final key = publishableKey.isNotEmpty
+      ? publishableKey
+      : legacyAnonKey.isNotEmpty
+      ? legacyAnonKey
+      : defaultPublishableKey;
   if (url.isEmpty || key.isEmpty) return const UnconfiguredSessionRepository();
   final uri = Uri.tryParse(url);
   if (uri == null ||
@@ -38,6 +52,9 @@ Future<SessionRepository> createSessionRepository() async {
     return SupabaseEmailAuthRepository(
       client: supabase.client,
       storage: storage,
+      emailVerificationMethod: verificationMethod == 'code'
+          ? EmailVerificationMethod.code
+          : EmailVerificationMethod.link,
     );
   } catch (_) {
     return const _UnavailableAuthRepository(

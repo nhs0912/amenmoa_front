@@ -208,15 +208,13 @@ class _EmailSignUpPageState extends State<EmailSignUpPage> {
     if (_busy || !_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     final email = _email.text.trim();
+    final password = _password.text;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await widget.repository.signUpWithEmail(
-        email: email,
-        password: _password.text,
-      );
+      await widget.repository.signUpWithEmail(email: email, password: password);
       if (!mounted) return;
       _password.clear();
       _confirmation.clear();
@@ -227,6 +225,11 @@ class _EmailSignUpPageState extends State<EmailSignUpPage> {
             builder: (_) => EmailVerificationPage(
               repository: widget.repository,
               email: email,
+              pendingPassword:
+                  widget.repository.verificationMethod ==
+                      EmailVerificationMethod.link
+                  ? password
+                  : null,
               onAuthenticated: widget.onAuthenticated,
             ),
           ),
@@ -334,8 +337,11 @@ class _EmailSignUpPageState extends State<EmailSignUpPage> {
               },
             ),
             const SizedBox(height: 16),
-            const Text(
-              '입력한 주소로 인증 메일을 보내요.\n메일에 적힌 인증번호를 다음 화면에서 입력해 주세요.',
+            Text(
+              widget.repository.verificationMethod ==
+                      EmailVerificationMethod.link
+                  ? '입력한 주소로 인증 메일을 보내요.\n메일의 인증 링크를 눌러 가입을 완료해 주세요.'
+                  : '입력한 주소로 인증 메일을 보내요.\n메일에 적힌 인증번호를 다음 화면에서 입력해 주세요.',
               style: TextStyle(color: _muted, height: 1.6),
             ),
             _ErrorNotice(message: _error),
@@ -374,10 +380,12 @@ class EmailVerificationPage extends StatefulWidget {
     required this.repository,
     required this.email,
     required this.onAuthenticated,
+    this.pendingPassword,
   });
 
   final EmailAuthRepository repository;
   final String email;
+  final String? pendingPassword;
   final ValueChanged<AppSession> onAuthenticated;
 
   @override
@@ -393,16 +401,22 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
   bool _resending = false;
   String? _error;
   String? _notice;
+  String? _pendingPassword;
+
+  bool get _usesLink =>
+      widget.repository.verificationMethod == EmailVerificationMethod.link;
 
   @override
   void initState() {
     super.initState();
+    _pendingPassword = widget.pendingPassword;
     _startCooldown();
   }
 
   @override
   void dispose() {
     _cooldown?.cancel();
+    _pendingPassword = null;
     _token.dispose();
     super.dispose();
   }
@@ -418,7 +432,12 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
   }
 
   Future<void> _verify() async {
-    if (_busy || _resending || !_formKey.currentState!.validate()) return;
+    if (_busy || _resending) return;
+    if (_usesLink && _pendingPassword == null) {
+      _openEmailLogin();
+      return;
+    }
+    if (!_usesLink && !_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     setState(() {
       _busy = true;
@@ -426,13 +445,19 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
       _notice = null;
     });
     try {
-      final session = await widget.repository.verifyEmail(
-        email: widget.email,
-        token: _token.text.trim(),
-      );
+      final session = _usesLink
+          ? await widget.repository.signInWithEmail(
+              email: widget.email,
+              password: _pendingPassword!,
+            )
+          : await widget.repository.verifyEmail(
+              email: widget.email,
+              token: _token.text.trim(),
+            );
       if (!mounted) return;
       _cooldown?.cancel();
       _token.clear();
+      _pendingPassword = null;
       widget.onAuthenticated(session);
     } catch (error) {
       if (mounted) setState(() => _error = _errorMessage(error));
@@ -452,7 +477,9 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
       await widget.repository.resendVerificationEmail(email: widget.email);
       if (!mounted) return;
       setState(() {
-        _notice = '인증 메일을 다시 보냈어요. 최근 메일의 인증번호를 입력해 주세요.';
+        _notice = _usesLink
+            ? '인증 메일을 다시 보냈어요. 최근 메일의 인증 링크를 눌러 주세요.'
+            : '인증 메일을 다시 보냈어요. 최근 메일의 인증번호를 입력해 주세요.';
         _startCooldown();
       });
     } catch (error) {
@@ -462,10 +489,24 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
     }
   }
 
+  void _openEmailLogin() {
+    _pendingPassword = null;
+    unawaited(
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => EmailLoginPage(
+            repository: widget.repository,
+            onAuthenticated: widget.onAuthenticated,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => _AuthPage(
     title: '이메일 인증',
-    subtitle: '메일을 확인하고 인증번호를 입력해 주세요.',
+    subtitle: _usesLink ? '메일의 인증 링크를 눌러 주세요.' : '메일을 확인하고 인증번호를 입력해 주세요.',
     child: Form(
       key: _formKey,
       child: Column(
@@ -496,27 +537,37 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
             ),
           ),
           const SizedBox(height: 24),
-          TextFormField(
-            key: const ValueKey('email-verification-token'),
-            controller: _token,
-            enabled: !_busy && !_resending,
-            keyboardType: TextInputType.number,
-            textInputAction: TextInputAction.done,
-            autofillHints: const [AutofillHints.oneTimeCode],
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            maxLength: 6,
-            autocorrect: false,
-            enableSuggestions: false,
-            decoration: const InputDecoration(
-              labelText: '6자리 인증번호',
-              hintText: '메일에 적힌 숫자 6자리',
-              counterText: '',
+          if (_usesLink)
+            const Text(
+              '메일의 인증 링크를 누른 후 이 화면으로 돌아와 주세요.',
+              style: TextStyle(
+                color: AppTheme.seedColor,
+                fontWeight: FontWeight.w600,
+                height: 1.7,
+              ),
+            )
+          else
+            TextFormField(
+              key: const ValueKey('email-verification-token'),
+              controller: _token,
+              enabled: !_busy && !_resending,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.done,
+              autofillHints: const [AutofillHints.oneTimeCode],
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              maxLength: 8,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                labelText: '8자리 인증번호',
+                hintText: '메일에 적힌 숫자 8자리',
+                counterText: '',
+              ),
+              validator: (value) => RegExp(r'^\d{8}$').hasMatch(value ?? '')
+                  ? null
+                  : '인증번호 8자리를 입력해 주세요.',
+              onFieldSubmitted: (_) => unawaited(_verify()),
             ),
-            validator: (value) => RegExp(r'^\d{6}$').hasMatch(value ?? '')
-                ? null
-                : '인증번호 6자리를 입력해 주세요.',
-            onFieldSubmitted: (_) => unawaited(_verify()),
-          ),
           const SizedBox(height: 16),
           const Text(
             '인증을 마치면 가입이 완료되고 자동으로 로그인돼요.\n메일이 보이지 않으면 스팸함도 확인해 주세요.',
@@ -540,7 +591,11 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
           const SizedBox(height: 24),
           _SubmitButton(
             buttonKey: const ValueKey('email-verification-submit'),
-            label: '인증하고 시작하기',
+            label: _usesLink
+                ? _pendingPassword == null
+                      ? '이메일로 로그인'
+                      : '인증했어요 · 계속하기'
+                : '인증하고 시작하기',
             busyLabel: '인증 확인 중',
             busy: _busy,
             onPressed: _resending ? null : _verify,

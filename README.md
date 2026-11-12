@@ -10,30 +10,37 @@ Flutter **3.47.9 stable** / Dart **3.13.7** 기준입니다.
 git clone --branch dev https://github.com/nhs0912/amenmoa_front.git
 cd amenmoa_front
 flutter pub get
-flutter run -d chrome
+flutter run -d chrome --web-port 3000
 ```
 
-인증 설정 없이도 화면과 기기 저장 모드를 확인할 수 있습니다. 이메일 로그인/가입 버튼은 활성화되어 있지만 실제 메일 전송과 계정 인증에는 아래 Supabase 설정이 필요합니다. 설정이 없을 때 메일을 보냈다고 표시하거나 가짜 계정으로 로그인하지 않습니다.
+기본 실행은 `moa` 조직의 아멘모아 개발용 Supabase 프로젝트에 연결됩니다. 연결에 사용하는 URL과 publishable key는 공개 클라이언트 설정입니다. secret/service-role 키나 SMTP 비밀번호는 앱에 포함하지 않습니다.
 
-## 실제 이메일 인증 연결
+## 이메일 인증 설정
 
-1. Supabase 프로젝트에서 Email provider와 **Confirm email**을 켭니다. 이메일 확인을 끄면 이 앱은 가입 즉시 발급되는 세션을 거부합니다.
-2. Email OTP 길이를 **6자리**로 설정합니다. Authentication의 **Confirm signup** 메일 템플릿에 `supabase/templates/confirmation.html`을 적용합니다. 템플릿은 `{{ .Token }}` 인증코드를 표시합니다. 앱은 링크 대신 이메일과 코드로 인증하므로 앱 딥링크 설정은 필요하지 않습니다.
-3. 실제 사용자에게 발송하려면 Supabase의 custom SMTP와 발신 주소를 설정합니다. 기본 발송 서비스에는 수신자와 발송 횟수 제한이 있어 일반 사용자용 발송을 보장하지 않습니다.
-4. `config/auth.example.json`을 `config/auth.local.json`으로 복사하고 Project URL과 **publishable key**를 입력합니다. 이전 프로젝트의 anon key는 `SUPABASE_ANON_KEY`로도 지원합니다. secret/service-role 키는 앱에서 사용하지 않습니다.
+현재 개발 프로젝트에는 Email provider와 **Confirm email**이 켜져 있습니다. 가입 메일은 Supabase의 기본 **인증 링크**를 사용합니다.
+
+- 가입 폼 → 인증 메일 요청 → 메일의 `Confirm email address` 링크 클릭 → 원래 앱의 **인증했어요 · 계속하기** → 서버 확인 후 가입 완료·로그인
+- 확인 전 버튼을 눌러도 서버에서 미인증 상태면 홈으로 이동하지 않습니다.
+- 가입 때 입력한 비밀번호는 인증 대기 화면의 메모리에만 잠시 유지하며 파일·환경설정·인증 저장소에 저장하지 않습니다. 앱을 종료했다면 이메일 인증 뒤 이메일 로그인으로 이어가면 됩니다.
+- 기본 메일 발송은 Supabase가 허용한 프로젝트 팀원의 이메일로 제한됩니다. 처음 테스트할 때는 Supabase 계정에 사용한 이메일을 이용하세요. 일반 사용자를 위한 발송에는 custom SMTP 설정이 필요합니다.
+- 무료 프로젝트에서 custom SMTP 없이 메일 템플릿을 편집할 수 없으므로 코드 대신 기본 인증 링크를 사용합니다. SMTP를 연결하면 `supabase/templates/confirmation.html`을 적용하고 아래 code 모드를 사용할 수 있습니다.
+- 서버의 Email OTP length는 **8자리**입니다. 보안 정책을 낮추지 않고 코드 모드 입력도 8자리로 맞췄습니다.
+
+현재 Site URL은 기본값 `http://localhost:3000`입니다. 메일에서 링크를 누른 뒤 개발 PC의 웹 앱으로 이동시키려면 아래 명령으로 웹 앱을 같은 포트에서 실행하세요. Android/iOS에서 가입했다면 메일 확인 후 원래 앱으로 돌아와 인증 확인 버튼을 누르면 됩니다. 실제 배포 전 Site URL을 운영 서비스 주소로 변경해야 합니다.
 
 ```bash
-flutter run -d chrome --dart-define-from-file=config/auth.local.json
+flutter run -d chrome --web-port 3000
+flutter run -d emulator-5554
+```
 
-# Android 에뮬레이터 예시 (flutter devices에서 ID 확인)
-flutter emulators --launch Pixel_3a_API_34
-flutter run -d emulator-5554 --dart-define-from-file=config/auth.local.json
+다른 Supabase 프로젝트를 쓰거나 메일 템플릿 방식을 바꿀 때만 `config/auth.example.json`을 `config/auth.local.json`으로 복사해 공개 설정을 변경합니다. `EMAIL_VERIFICATION_METHOD`는 기본 `link`이며 custom SMTP와 코드 메일 템플릿을 설정한 경우 `code`로 지정합니다. 이전 프로젝트의 anon key는 `SUPABASE_ANON_KEY`로도 지원합니다.
 
-# 실제 서비스 설정을 포함한 웹 빌드
+```bash
+flutter run -d chrome --web-port 3000 --dart-define-from-file=config/auth.local.json
 flutter build web --release --dart-define-from-file=config/auth.local.json
 ```
 
-로컬 설정 파일은 Git에서 제외됩니다. SMTP 비밀번호와 Supabase secret/service-role 키는 이 파일이나 앱 코드에 넣지 않습니다. CI의 기본 빌드는 인증 서비스 설정 없이 수행합니다.
+로컬 설정 파일은 Git에서 제외됩니다. SMTP 비밀번호와 Supabase secret/service-role 키는 이 파일이나 앱 코드에 넣지 않습니다.
 
 공식 설정 문서: [이메일 템플릿](https://supabase.com/docs/guides/auth/auth-email-templates), [SMTP](https://supabase.com/docs/guides/auth/auth-smtp), [세션 유지](https://supabase.com/docs/guides/auth/sessions).
 
@@ -44,8 +51,8 @@ flutter build web --release --dart-define-from-file=config/auth.local.json
 - 비로그인이면 **아멘모아 시작하기**로 이동합니다.
 - **이메일로 로그인**: 이메일과 비밀번호를 입력합니다.
 - **이메일로 가입**: 이메일·비밀번호(8자 이상)·비밀번호 확인을 입력하고 인증 메일을 요청합니다.
-- **이메일 인증**: 메일의 6자리 인증코드를 입력합니다. 서버 인증이 성공한 경우에만 가입 완료 상태로 홈을 열고 로그인 상태를 저장합니다.
-- 틀리거나 만료된 코드는 오류를 표시하며, 60초 뒤 인증 메일을 다시 요청할 수 있습니다. 이메일 주소 수정 시 비밀번호는 다시 입력합니다.
+- **이메일 인증**: 기본 링크 모드에서는 메일의 인증 링크를 누른 뒤 앱에서 확인합니다. 코드 모드에서는 8자리 인증코드를 입력합니다. 서버 인증이 성공한 경우에만 홈을 열고 로그인 상태를 저장합니다.
+- 미인증 계정이나 틀리거나 만료된 코드는 오류를 표시하며, 60초 뒤 인증 메일을 다시 요청할 수 있습니다. 이메일 주소 수정 시 비밀번호는 다시 입력합니다.
 - **프로필 → 로그아웃**: 이 기기의 저장 세션과 메모리 세션을 해제하고 아멘모아 시작하기로 돌아옵니다. 로그아웃 뒤 재실행해도 자동 로그인되지 않습니다.
 - **기기 저장 모드로 둘러보기**: 계정 로그인 없이 기존 기능을 확인합니다. 프로필의 **로그인 화면으로**에서 돌아갈 수 있습니다.
 
@@ -83,4 +90,4 @@ flutter build web --release
 flutter build apk --debug
 ```
 
-화면·입력 검증·인증 흐름은 테스트용 인증 저장소로 검증하며, 실제 메일 전송은 서비스 설정과 실제 수신 주소가 있어야 확인할 수 있습니다. 테스트는 가짜 성공을 제품에 사용하지 않습니다.
+화면·입력 검증·인증 흐름은 테스트용 인증 저장소로 검증하며, 실제 메일 수신·링크 인증의 최종 확인에는 사용자의 실제 가입과 메일 확인이 필요합니다. 테스트는 가짜 성공을 제품에 사용하지 않습니다.

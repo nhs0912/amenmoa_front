@@ -83,6 +83,13 @@ class FakeEmailAuthRepository implements EmailAuthRepository {
   Future<void> close() => changes.close();
 }
 
+class FakeLinkEmailAuthRepository extends FakeEmailAuthRepository
+    implements EmailVerificationPolicy {
+  @override
+  EmailVerificationMethod get emailVerificationMethod =>
+      EmailVerificationMethod.link;
+}
+
 AppSession verifiedSession({Duration lifetime = const Duration(hours: 1)}) =>
     AppSession(
       userId: 'verified-email-user',
@@ -137,7 +144,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets(
-    'signup requires matching credentials and verified six digit code',
+    'signup requires matching credentials and verified eight digit code',
     (tester) async {
       final repository = FakeEmailAuthRepository();
       repository.onSignUp = (email, password) async {
@@ -146,7 +153,7 @@ void main() {
       };
       repository.onVerify = (email, token) async {
         expect(email, 'seoyun@example.com');
-        if (token != '654321') {
+        if (token != '87654321') {
           throw const AuthFailure('인증번호가 일치하지 않아요.');
         }
         return verifiedSession();
@@ -207,7 +214,7 @@ void main() {
 
       await tester.enterText(
         find.byKey(const ValueKey('email-verification-token')),
-        '123',
+        '123456',
       );
       await tapVisible(
         tester,
@@ -216,7 +223,7 @@ void main() {
       expect(repository.verifyCalls, 0);
       await tester.enterText(
         find.byKey(const ValueKey('email-verification-token')),
-        '123456',
+        '12345678',
       );
       await tapVisible(
         tester,
@@ -227,7 +234,7 @@ void main() {
 
       await tester.enterText(
         find.byKey(const ValueKey('email-verification-token')),
-        '654321',
+        '87654321',
       );
       await tapVisible(
         tester,
@@ -237,7 +244,94 @@ void main() {
       final preferences = await SharedPreferences.getInstance();
       final storedValues = preferences.getKeys().map(preferences.get).join();
       expect(storedValues, isNot(contains('Peaceful2026!')));
-      expect(storedValues, isNot(contains('654321')));
+      expect(storedValues, isNot(contains('87654321')));
+      await disposeApp(tester, repository);
+    },
+  );
+
+  testWidgets(
+    'link signup checks server confirmation before opening the home screen',
+    (tester) async {
+      final repository = FakeLinkEmailAuthRepository();
+      bool confirmed = false;
+      repository.onSignUp = (email, password) async {
+        expect(email, 'seoyun@example.com');
+        expect(password, 'Peaceful2026!');
+      };
+      repository.onSignIn = (email, password) async {
+        expect(email, 'seoyun@example.com');
+        expect(password, 'Peaceful2026!');
+        if (!confirmed) throw const AuthFailure('메일의 인증 링크를 먼저 눌러 주세요.');
+        return verifiedSession();
+      };
+      await mountApp(tester, repository);
+      await tapVisible(tester, find.text('이메일로 가입'));
+      await tester.enterText(
+        find.byKey(const ValueKey('email-signup-email')),
+        'seoyun@example.com',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('email-signup-password')),
+        'Peaceful2026!',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('email-signup-confirm-password')),
+        'Peaceful2026!',
+      );
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('email-signup-submit')),
+      );
+      expect(find.byType(EmailVerificationPage), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('email-verification-token')),
+        findsNothing,
+      );
+      expect(repository.savedSession, isNull);
+      await tapVisible(tester, find.text('인증했어요 · 계속하기'));
+      expect(find.text('메일의 인증 링크를 먼저 눌러 주세요.'), findsOneWidget);
+      expect(find.byType(AppShell), findsNothing);
+      expect(repository.signInCalls, 1);
+      expect(repository.verifyCalls, 0);
+      confirmed = true;
+      await tapVisible(tester, find.text('인증했어요 · 계속하기'));
+      expect(find.byType(AppShell), findsOneWidget);
+      expect(repository.signInCalls, 2);
+      final preferences = await SharedPreferences.getInstance();
+      expect(
+        preferences.getKeys().map(preferences.get).join(),
+        isNot(contains('Peaceful2026!')),
+      );
+      await disposeApp(tester, repository);
+    },
+  );
+
+  testWidgets(
+    'link verification without a pending password offers email login',
+    (tester) async {
+      final repository = FakeLinkEmailAuthRepository();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EmailVerificationPage(
+            repository: repository,
+            email: 'seoyun@example.com',
+            onAuthenticated: (_) =>
+                fail('Cannot authenticate without credentials'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('email-verification-token')),
+        findsNothing,
+      );
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('email-verification-submit')),
+      );
+      expect(find.byType(EmailLoginPage), findsOneWidget);
+      expect(repository.signInCalls, 0);
+      expect(repository.verifyCalls, 0);
       await disposeApp(tester, repository);
     },
   );

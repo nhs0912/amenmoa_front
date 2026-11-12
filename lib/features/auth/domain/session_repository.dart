@@ -76,3 +76,17 @@ class UnconfiguredSessionRepository implements EmailAuthRepository {
   Future<void> resendVerificationEmail({required String email}) async =>
       throw _missing;
 }
+
+/// Some projects send a confirmation link; custom SMTP can instead send a code.
+enum EmailVerificationMethod { code, link }
+
+abstract interface class EmailVerificationPolicy {
+  EmailVerificationMethod get emailVerificationMethod;
+}
+
+extension EmailAuthVerificationPolicy on EmailAuthRepository {
+  EmailVerificationMethod get verificationMethod =>
+      this is EmailVerificationPolicy
+      ? (this as EmailVerificationPolicy).emailVerificationMethod
+      : EmailVerificationMethod.code;
+}
