@@ -11,11 +11,15 @@ class AppShell extends StatefulWidget {
     this.onExitToLogin,
     this.userId,
     this.accountEmail,
+    this.accountNickname,
+    this.onEditNickname,
     this.signingOut = false,
   });
   final VoidCallback? onExitToLogin;
   final String? userId;
   final String? accountEmail;
+  final String? accountNickname;
+  final VoidCallback? onEditNickname;
   final bool signingOut;
   @override
   State<AppShell> createState() => _AppShellState();
@@ -69,7 +73,7 @@ class _AppShellState extends State<AppShell> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 680),
               child: [
-                HomeScreen(store: store),
+                HomeScreen(store: store, nickname: widget.accountNickname),
                 GroupsScreen(store: store),
                 PrayerScreen(store: store),
                 RecordsScreen(store: store),
@@ -77,6 +81,8 @@ class _AppShellState extends State<AppShell> {
                   store: store,
                   onExitToLogin: widget.onExitToLogin,
                   accountEmail: widget.accountEmail,
+                  nickname: widget.accountNickname,
+                  onEditNickname: widget.onEditNickname,
                   authenticated: widget.userId != null,
                   signingOut: widget.signingOut,
                 ),

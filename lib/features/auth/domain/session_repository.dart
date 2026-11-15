@@ -1,13 +1,41 @@
+import 'package:characters/characters.dart';
+
 /// A session returned only after the authentication service verifies the user.
 class AppSession {
-  const AppSession({required this.userId, required this.expiresAt, this.email});
+  const AppSession({
+    required this.userId,
+    required this.expiresAt,
+    this.email,
+    this.nickname,
+  });
 
   final String userId;
   final DateTime expiresAt;
   final String? email;
+  final String? nickname;
+
+  bool get hasNickname => validateNickname(nickname) == null;
 
   bool get isValid =>
       userId.trim().isNotEmpty && expiresAt.isAfter(DateTime.now());
+}
+
+/// Nicknames are display data only, never an authorization or identity claim.
+/// Count user-visible grapheme clusters so Korean and joined emoji behave alike.
+String? validateNickname(String? value) {
+  if (value == null || value.trim().isEmpty) return '닉네임을 입력해 주세요.';
+  if (RegExp(
+    r'[\u0000-\u001F\u007F-\u009F\u200B\u200E\u200F\u202A-\u202E\u2060-\u206F\uFEFF]',
+  ).hasMatch(value)) {
+    return '닉네임에 줄바꿈이나 숨겨진 제어 문자를 넣을 수 없어요.';
+  }
+  final length = value.trim().characters.length;
+  if (length < 2 || length > 20) return '닉네임은 2자 이상 20자 이하로 입력해 주세요.';
+  return null;
+}
+
+abstract interface class NicknameRepository {
+  Future<AppSession> saveNickname(String nickname);
 }
 
 abstract interface class SessionRepository {

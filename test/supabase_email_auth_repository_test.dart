@@ -263,4 +263,111 @@ void main() {
       expect(await fixture.repository.restoreSession(), isNull);
     },
   );
+
+  test('nickname validation counts visible characters and never accepts social names', () async {
+    expect(validateNickname('  서윤  '), isNull);
+    expect(validateNickname('🙏🏽🙏🏽'), isNull);
+    expect(validateNickname('👨‍👩‍👧‍👦👨‍👩‍👧‍👦'), isNull);
+    expect(validateNickname('가' * 20), isNull);
+    expect(validateNickname('가' * 21), isNotNull);
+    expect(validateNickname('가'), isNotNull);
+    expect(validateNickname('  '), isNotNull);
+    expect(validateNickname('서\n윤'), isNotNull);
+    final fixture = AuthFixture();
+    addTearDown(fixture.dispose);
+    fixture.route = (request) async {
+      final value = sessionJson();
+      (value['user'] as Map<String, dynamic>)['user_metadata'] = {
+        'full_name': '기존 소셜 이름',
+        'name': '이름',
+      };
+      return response(value);
+    };
+    final session = await fixture.signIn();
+    expect(session.nickname, isNull);
+    expect(session.hasNickname, isFalse);
+  });
+
+  test('saving a nickname persists server metadata and survives session restoration', () async {
+    final fixture = AuthFixture();
+    await fixture.signIn();
+    final updated = userJson();
+    updated['user_metadata'] = {'nickname': '평안한서윤', 'full_name': '소셜 이름'};
+    var updateRequests = 0;
+    fixture.route = (request) async {
+      if (request.method == 'GET' && request.url.path.endsWith('/user')) {
+        return response(userJson());
+      }
+      if (request.method == 'PUT' && request.url.path.endsWith('/user')) {
+        updateRequests++;
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['data'], {'nickname': '평안한서윤'});
+        return response(updated);
+      }
+      throw StateError(
+        'Unexpected test request: ${request.method} ${request.url.path}',
+      );
+    };
+    final session = await fixture.repository.saveNickname('  평안한서윤  ');
+    expect(updateRequests, 1);
+    expect(session.nickname, '평안한서윤');
+    expect(session.hasNickname, isTrue);
+    expect(fixture.client.auth.currentUser?.userMetadata?['nickname'], '평안한서윤');
+    final saved = (await fixture.storage.accessToken())!;
+    final persisted = jsonDecode(saved) as Map<String, dynamic>;
+    expect(persisted['user']['user_metadata']['nickname'], '평안한서윤');
+    await fixture.dispose();
+
+    final restarted = AuthFixture();
+    addTearDown(restarted.dispose);
+    restarted.route = (request) async => response(updated);
+    await restarted.client.auth.recoverSession(saved);
+    final restored = await restarted.repository.restoreSession();
+    expect(restored?.nickname, '평안한서윤');
+    expect(restored?.hasNickname, isTrue);
+  });
+
+  test(
+    'nickname validation and update failures do not finish onboarding',
+    () async {
+      final fixture = AuthFixture();
+      addTearDown(fixture.dispose);
+      final signedIn = await fixture.signIn();
+      expect(signedIn.hasNickname, isFalse);
+      final savedBefore = await fixture.storage.accessToken();
+      var updateRequests = 0;
+      fixture.route = (request) async {
+        if (request.method == 'GET' && request.url.path.endsWith('/user')) {
+          return response(userJson());
+        }
+        if (request.method == 'PUT' && request.url.path.endsWith('/user')) {
+          updateRequests++;
+          return response({
+            'code': 'unexpected_failure',
+            'msg': 'internal',
+          }, 500);
+        }
+        throw StateError(
+          'Unexpected test request: ${request.method} ${request.url.path}',
+        );
+      };
+      await expectLater(
+        fixture.repository.saveNickname('가'),
+        throwsA(isA<AuthFailure>()),
+      );
+      expect(updateRequests, 0);
+      await expectLater(
+        fixture.repository.saveNickname('평안한서윤'),
+        throwsA(isA<AuthFailure>()),
+      );
+      expect(updateRequests, 1);
+      expect(
+        fixture.client.auth.currentUser?.userMetadata?['nickname'],
+        isNull,
+      );
+      expect(await fixture.storage.accessToken(), savedBefore);
+      final restored = await fixture.repository.restoreSession();
+      expect(restored?.hasNickname, isFalse);
+    },
+  );
 }

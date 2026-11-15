@@ -94,6 +94,7 @@ AppSession verifiedSession({Duration lifetime = const Duration(hours: 1)}) =>
     AppSession(
       userId: 'verified-email-user',
       email: 'seoyun@example.com',
+      nickname: '서윤',
       expiresAt: DateTime.now().add(lifetime),
     );
 

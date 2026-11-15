@@ -7,6 +7,7 @@ import '../../../app/theme/app_theme.dart';
 import '../domain/session_repository.dart';
 import 'brand_logo.dart';
 import 'email_auth_pages.dart';
+import 'nickname_page.dart';
 
 class StartupGate extends StatefulWidget {
   const StartupGate({
@@ -27,6 +28,7 @@ class _StartupGateState extends State<StartupGate> with WidgetsBindingObserver {
   bool _guest = false;
   bool _signingOut = false;
   bool _refreshing = false;
+  bool _savingNickname = false;
   int _sessionVersion = 0;
   AppSession? _session;
   String? _error;
@@ -49,7 +51,7 @@ class _StartupGateState extends State<StartupGate> with WidgetsBindingObserver {
         if (!mounted || _loading || _signingOut || _session == null) return;
         if (session == null) {
           _showSignedOut('로그인이 해제됐어요. 다시 로그인해 주세요.');
-        } else if (session.isValid) {
+        } else if (session.isValid && !_savingNickname) {
           setState(() => _session = session);
           _scheduleSessionCheck();
         }
@@ -111,7 +113,9 @@ class _StartupGateState extends State<StartupGate> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshSession() async {
-    if (_refreshing || _signingOut || _session == null) return;
+    if (_refreshing || _signingOut || _savingNickname || _session == null) {
+      return;
+    }
     _refreshing = true;
     final version = _sessionVersion;
     try {
@@ -163,6 +167,77 @@ class _StartupGateState extends State<StartupGate> with WidgetsBindingObserver {
     _scheduleSessionCheck();
   }
 
+  Future<AppSession> _saveNickname(String nickname) async {
+    final current = _session;
+    final version = _sessionVersion;
+    final repository = widget.sessionRepository;
+    if (current == null || _signingOut) {
+      throw const AuthFailure('다시 로그인한 뒤 닉네임을 설정해 주세요.');
+    }
+    if (repository is! NicknameRepository) {
+      throw const AuthFailure('닉네임 저장에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.');
+    }
+    final validation = validateNickname(nickname);
+    if (validation != null) throw AuthFailure(validation);
+    if (_savingNickname) throw const AuthFailure('닉네임을 저장하는 중이에요.');
+    _savingNickname = true;
+    try {
+      final updated = await (repository as NicknameRepository).saveNickname(
+        nickname.trim(),
+      );
+      if (!mounted ||
+          _signingOut ||
+          version != _sessionVersion ||
+          _session?.userId != current.userId) {
+        throw const AuthFailure('로그인 상태가 바뀌었어요. 다시 로그인해 주세요.');
+      }
+      if (!updated.isValid ||
+          updated.userId != current.userId ||
+          !updated.hasNickname) {
+        throw const AuthFailure('닉네임 저장을 확인하지 못했어요. 다시 시도해 주세요.');
+      }
+      return updated;
+    } finally {
+      _savingNickname = false;
+      if (mounted && version == _sessionVersion && !_signingOut) {
+        _scheduleSessionCheck();
+      }
+    }
+  }
+
+  void _completeNickname(AppSession session) {
+    if (!mounted ||
+        _signingOut ||
+        _session?.userId != session.userId ||
+        !session.isValid ||
+        !session.hasNickname) {
+      return;
+    }
+    _sessionVersion++;
+    setState(() => _session = session);
+    _scheduleSessionCheck();
+  }
+
+  void _openNicknameEditor() {
+    final current = _session;
+    if (current == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (pageContext) => NicknamePage(
+          editing: true,
+          initialNickname: current.nickname,
+          onSave: _saveNickname,
+          onCompleted: (updated) {
+            _completeNickname(updated);
+            if (pageContext.mounted) Navigator.of(pageContext).pop();
+          },
+          onSignOut: _exitToLogin,
+          signingOut: _signingOut,
+        ),
+      ),
+    );
+  }
+
   Future<void> _exitToLogin() async {
     if (_signingOut) return;
     setState(() => _signingOut = true);
@@ -201,11 +276,23 @@ class _StartupGateState extends State<StartupGate> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const StartupSplash();
+    if (_session != null && !_session!.hasNickname) {
+      return NicknamePage(
+        key: ValueKey('nickname-${_session!.userId}'),
+        initialNickname: _session!.nickname,
+        onSave: _saveNickname,
+        onCompleted: _completeNickname,
+        onSignOut: _exitToLogin,
+        signingOut: _signingOut,
+      );
+    }
     if (_session != null || _guest) {
       return AppShell(
         key: ValueKey(_session?.userId ?? 'guest'),
         userId: _session?.userId,
         accountEmail: _session?.email,
+        accountNickname: _session?.nickname,
+        onEditNickname: _session == null ? null : _openNicknameEditor,
         signingOut: _signingOut,
         onExitToLogin: _exitToLogin,
       );

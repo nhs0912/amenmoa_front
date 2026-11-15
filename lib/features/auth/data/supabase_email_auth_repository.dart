@@ -7,7 +7,10 @@ import '../domain/session_repository.dart';
 import 'secure_session_storage.dart';
 
 class SupabaseEmailAuthRepository
-    implements EmailAuthRepository, EmailVerificationPolicy {
+    implements
+        EmailAuthRepository,
+        EmailVerificationPolicy,
+        NicknameRepository {
   SupabaseEmailAuthRepository({
     required this.client,
     required this.storage,
@@ -162,20 +165,86 @@ class SupabaseEmailAuthRepository
   }
 
   Future<AppSession> _acceptSession(Session session, User user) async {
-    final result = _toAppSession(session, user);
+    final sessionWithUser = session.copyWith(user: user);
+    final result = _toAppSession(sessionWithUser, user);
     if (!result.isValid) {
       throw const AuthFailure('로그인 시간이 만료됐어요. 다시 로그인해 주세요.');
     }
     storage.resumeWrites();
     try {
       // Explicitly await persistence: the SDK's auth-event persistence is async.
-      await storage.persistSession(jsonEncode(session.toJson()));
+      await storage.persistSession(jsonEncode(sessionWithUser.toJson()));
     } catch (_) {
       await _clearLocalSession();
       throw const AuthFailure('로그인 정보를 안전하게 저장하지 못했어요. 다시 시도해 주세요.');
     }
     _allowSessionEvents = true;
     return result;
+  }
+
+  @override
+  Future<AppSession> saveNickname(String nickname) async {
+    final validation = validateNickname(nickname);
+    if (validation != null) throw AuthFailure(validation);
+    final normalized = nickname.trim();
+    final originalSession = client.auth.currentSession;
+    if (originalSession == null || !_isVerified(originalSession.user)) {
+      throw const AuthFailure('로그인 후 닉네임을 설정해 주세요.');
+    }
+    final userId = originalSession.user.id;
+    final previouslyAllowed = _allowSessionEvents;
+    // updateUser emits userUpdated before the secure write completes. Suppress
+    // that event so a failed persistence cannot prematurely finish onboarding.
+    _allowSessionEvents = false;
+    try {
+      var current = client.auth.currentSession;
+      if (current!.isExpired) {
+        current = (await client.auth.refreshSession().timeout(_requestTimeout))
+            .session;
+      }
+      if (current == null || current.user.id != userId) {
+        throw const AuthFailure('로그인 상태가 바뀌었어요. 다시 로그인해 주세요.');
+      }
+      final verifiedUser = (await client.auth.getUser().timeout(
+        _requestTimeout,
+      )).user;
+      if (verifiedUser == null ||
+          !_isVerified(verifiedUser) ||
+          verifiedUser.id != userId) {
+        throw const AuthFailure('로그인 상태를 확인할 수 없어요. 다시 로그인해 주세요.');
+      }
+      if (client.auth.currentSession?.user.id != userId) {
+        throw const AuthFailure('로그인 상태가 바뀌었어요. 다시 로그인해 주세요.');
+      }
+      final response = await client.auth
+          .updateUser(UserAttributes(data: {'nickname': normalized}))
+          .timeout(_requestTimeout);
+      final updatedUser = response.user;
+      final updatedSession = client.auth.currentSession;
+      if (updatedUser == null ||
+          !_isVerified(updatedUser) ||
+          updatedUser.id != userId ||
+          updatedSession == null ||
+          updatedSession.user.id != userId ||
+          updatedUser.userMetadata?['nickname'] != normalized) {
+        throw const AuthFailure('닉네임을 저장했는지 확인하지 못했어요. 다시 시도해 주세요.');
+      }
+      // Use the server's returned metadata even if an SDK session were stale.
+      return await _acceptSession(
+        updatedSession.copyWith(user: updatedUser),
+        updatedUser,
+      );
+    } catch (error) {
+      if (error is AuthFailure) rethrow;
+      throw _failureFor(error);
+    } finally {
+      final remaining = client.auth.currentSession;
+      _allowSessionEvents =
+          (_allowSessionEvents || previouslyAllowed) &&
+          remaining != null &&
+          _isVerified(remaining.user) &&
+          remaining.user.id == userId;
+    }
   }
 
   @override
@@ -209,6 +278,9 @@ class SupabaseEmailAuthRepository
       (session.expiresAt ?? 0) * 1000,
     ),
     email: user.email,
+    nickname: user.userMetadata?['nickname'] is String
+        ? (user.userMetadata!['nickname'] as String).trim()
+        : null,
   );
 
   static bool _isInvalidSession(AuthException error) =>

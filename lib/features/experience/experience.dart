@@ -220,12 +220,13 @@ Widget metric(String value, String label) => Column(
 );
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, required this.store});
+  const HomeScreen({super.key, required this.store, this.nickname});
   final PrayerStore store;
+  final String? nickname;
   @override
   Widget build(BuildContext context) => PageBody(
     title: '혼자 시작해도, 함께',
-    subtitle: '${store.name}님 · 오늘도 같은 마음으로 기도해요',
+    subtitle: '${nickname ?? store.name}님 · 오늘도 같은 마음으로 기도해요',
     children: [
       if (!store.loaded) const LinearProgressIndicator(),
       if (store.error != null)
@@ -1297,12 +1298,17 @@ class ProfileScreen extends StatelessWidget {
     required this.store,
     this.onExitToLogin,
     this.accountEmail,
+    this.nickname,
+    this.onEditNickname,
     this.authenticated = false,
     this.signingOut = false,
   });
   final PrayerStore store;
   final VoidCallback? onExitToLogin;
   final String? accountEmail;
+  final String? nickname;
+  final VoidCallback? onEditNickname;
+  String get _displayName => nickname ?? store.name;
   final bool authenticated;
   final bool signingOut;
   @override
@@ -1317,7 +1323,7 @@ class ProfileScreen extends StatelessWidget {
               radius: 28,
               backgroundColor: sage,
               child: Text(
-                store.name.isEmpty ? '나' : store.name.substring(0, 1),
+                _displayName.isEmpty ? '나' : _displayName.characters.first,
               ),
             ),
             const SizedBox(width: 16),
@@ -1325,7 +1331,7 @@ class ProfileScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  heading(store.name),
+                  heading(_displayName),
                   note(
                     authenticated ? (accountEmail ?? '이메일 계정') : '기기 저장 프로필',
                   ),
@@ -1333,14 +1339,16 @@ class ProfileScreen extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: '프로필 편집',
-              onPressed: () async {
-                final value = await textDialog(context, '프로필 편집', '이름');
-                if (value != null) {
-                  store.name = value;
-                  await store.save();
-                }
-              },
+              tooltip: authenticated ? '닉네임 수정' : '프로필 편집',
+              onPressed: authenticated
+                  ? onEditNickname
+                  : () async {
+                      final value = await textDialog(context, '프로필 편집', '이름');
+                      if (value != null) {
+                        store.name = value;
+                        await store.save();
+                      }
+                    },
               icon: const Icon(Icons.edit_outlined),
             ),
           ],

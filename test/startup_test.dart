@@ -61,6 +61,7 @@ void main() {
     final repository = TestSessionRepository(
       () async => AppSession(
         userId: 'verified-user',
+        nickname: '서윤',
         expiresAt: DateTime.now().add(const Duration(hours: 1)),
       ),
     );
@@ -82,6 +83,7 @@ void main() {
     final repository = TestSessionRepository(
       () async => AppSession(
         userId: 'expired-user',
+        nickname: '서윤',
         expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
       ),
     );
