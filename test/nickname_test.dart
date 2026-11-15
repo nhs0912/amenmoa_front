@@ -2,10 +2,20 @@ import 'dart:async';
 
 import 'package:amenmoa_front/app/app.dart';
 import 'package:amenmoa_front/app/app_shell.dart';
+import 'package:amenmoa_front/features/auth/domain/nickname_availability.dart';
 import 'package:amenmoa_front/features/auth/domain/session_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class AvailableNicknameChecker implements NicknameAvailabilityChecker {
+  const AvailableNicknameChecker();
+  @override
+  bool get isConfigured => true;
+  @override
+  Future<NicknameAvailability> check(String nickname) async =>
+      NicknameAvailability.available;
+}
 
 AppSession authenticatedUser({String? nickname, String userId = 'new-user'}) =>
     AppSession(
@@ -114,6 +124,7 @@ Future<void> mountApp(WidgetTester tester, SessionRepository repository) async {
   await tester.pumpWidget(
     AmenMoaApp(
       sessionRepository: repository,
+      nicknameAvailabilityChecker: const AvailableNicknameChecker(),
       minimumSplashDuration: Duration.zero,
     ),
   );
@@ -178,6 +189,7 @@ void main() {
         find.byKey(const ValueKey('nickname-input')),
         '  은혜  ',
       );
+      await tester.pump(const Duration(seconds: 1));
       await tapVisible(tester, find.byKey(const ValueKey('nickname-submit')));
       expect(find.text('닉네임 저장이 잠시 어려워요.'), findsOneWidget);
       expect(find.byKey(const ValueKey('nickname-screen')), findsOneWidget);
@@ -204,6 +216,7 @@ void main() {
         find.byKey(const ValueKey('nickname-input')),
         '평안',
       );
+      await tester.pump(const Duration(seconds: 1));
       await tapVisible(tester, find.byKey(const ValueKey('nickname-submit')));
       expect(repository.savedNickname, '평안');
       expect(find.byType(AppShell), findsOneWidget);
@@ -237,6 +250,7 @@ void main() {
         find.byKey(const ValueKey('nickname-input')),
         '기쁨',
       );
+      await tester.pump(const Duration(seconds: 1));
       await tapVisible(tester, find.byKey(const ValueKey('nickname-submit')));
       expect(repository.savedNicknames.single, '기쁨');
       expect(find.text('기쁨'), findsOneWidget);

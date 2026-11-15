@@ -48,6 +48,31 @@ class NicknameGateRepository implements SessionRepository, NicknameRepository {
 Finder get input => find.byKey(const ValueKey('nickname-input'));
 Finder get submit => find.byKey(const ValueKey('nickname-submit'));
 
+InputDecoration nicknameDecoration(WidgetTester tester) => tester
+    .widget<TextField>(
+      find.descendant(of: input, matching: find.byType(TextField)),
+    )
+    .decoration!;
+
+void expectStatusBorder(WidgetTester tester, Color color) {
+  final decoration = nicknameDecoration(tester);
+  expect(decoration.enabledBorder?.borderSide.color, color);
+  expect(decoration.focusedBorder?.borderSide.color, color);
+}
+
+void expectNeutralBorder(WidgetTester tester) {
+  final decoration = nicknameDecoration(tester);
+  expect(decoration.enabledBorder?.borderSide.color, const Color(0xFFD6DFD8));
+  expect(decoration.focusedBorder?.borderSide.color, const Color(0xFFA7B8AD));
+}
+
+bool inputHasFocus(WidgetTester tester) => tester
+    .widget<EditableText>(
+      find.descendant(of: input, matching: find.byType(EditableText)),
+    )
+    .focusNode
+    .hasFocus;
+
 Future<void> disposePage(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox());
   await tester.pump();
@@ -183,8 +208,14 @@ void main() {
           ),
         ),
       );
+      await tester.enterText(input, '가');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(find.text(validateNickname('가')!), findsOneWidget);
       await tester.enterText(input, '은혜');
       await tester.pump();
+      expect(find.text(validateNickname('가')!), findsNothing);
+      expectNeutralBorder(tester);
       expect(tester.widget<FilledButton>(submit).onPressed, isNull);
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pump();
@@ -192,6 +223,8 @@ void main() {
 
       await tester.pump(const Duration(seconds: 1));
       expect(checker.names, ['은혜']);
+      expect(find.text('중복 확인 중…'), findsOneWidget);
+      expectNeutralBorder(tester);
       expect(tester.widget<FilledButton>(submit).onPressed, isNull);
       // Done ends the previous input connection; a new attempt refocuses it.
       await tester.showKeyboard(input);
@@ -201,12 +234,23 @@ void main() {
       expect(saves, isEmpty);
       checker.responses.single.complete(NicknameAvailability.available);
       await tester.pumpAndSettle();
+      expect(inputHasFocus(tester), isFalse);
+      expectStatusBorder(tester, const Color(0xFF25815F));
+      expect(find.text('닉네임 저장'), findsOneWidget);
       expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
       await tester.showKeyboard(input);
       await tester.pump();
+      expect(inputHasFocus(tester), isTrue);
+      expectStatusBorder(tester, const Color(0xFF25815F));
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
       expect(saves, ['은혜']);
+      expect(inputHasFocus(tester), isFalse);
+      expectStatusBorder(tester, const Color(0xFF25815F));
+      await tester.enterText(input, '바뀐이름');
+      await tester.pump();
+      expectNeutralBorder(tester);
+      expect(tester.widget<FilledButton>(submit).onPressed, isNull);
       await disposePage(tester);
     },
   );
@@ -233,19 +277,28 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       checker.responses[0].complete(NicknameAvailability.taken);
       await tester.pump();
+      expectStatusBorder(tester, const Color(0xFFBF4B45));
       expect(tester.widget<FilledButton>(submit).onPressed, isNull);
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pump();
       expect(saves, 0);
+      expect(inputHasFocus(tester), isFalse);
+      expectStatusBorder(tester, const Color(0xFFBF4B45));
 
       await tester.enterText(input, '새닉네임');
+      await tester.pump();
+      expectNeutralBorder(tester);
+      expect(tester.widget<FilledButton>(submit).onPressed, isNull);
       await tester.pump(const Duration(seconds: 1));
       checker.responses[1].completeError(StateError('test offline'));
       await tester.pump();
+      expectStatusBorder(tester, const Color(0xFFBF4B45));
       expect(tester.widget<FilledButton>(submit).onPressed, isNull);
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pump();
       expect(saves, 0);
+      expect(inputHasFocus(tester), isFalse);
+      expectStatusBorder(tester, const Color(0xFFBF4B45));
       final retry = find.byKey(const ValueKey('nickname-availability-retry'));
       await tester.ensureVisible(retry);
       await tester.pump();
@@ -254,13 +307,14 @@ void main() {
       expect(checker.names, ['이미사용', '새닉네임', '새닉네임']);
       checker.responses[2].complete(NicknameAvailability.available);
       await tester.pumpAndSettle();
+      expectStatusBorder(tester, const Color(0xFF25815F));
       expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
       await disposePage(tester);
     },
   );
 
   testWidgets(
-    'without a backend the existing save flow remains without claiming availability',
+    'without a backend saving stays blocked without claiming availability',
     (tester) async {
       final saves = <String>[];
       await tester.pumpWidget(
@@ -278,11 +332,11 @@ void main() {
       await tester.enterText(input, '기쁨');
       await tester.pump(const Duration(seconds: 1));
       expect(find.textContaining('사용할 수 있는 닉네임'), findsNothing);
-      expect(find.text('중복 확인은 준비 중이에요. 현재 닉네임 저장은 가능해요.'), findsOneWidget);
-      expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
+      expect(find.text('중복 확인 연결을 준비 중이에요.'), findsOneWidget);
+      expect(tester.widget<FilledButton>(submit).onPressed, isNull);
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
-      expect(saves, ['기쁨']);
+      expect(saves, isEmpty);
       await disposePage(tester);
     },
   );
@@ -346,8 +400,20 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       expect(unconfigured.canSave, isFalse);
       unconfigured.updateInput('가나', isComposing: false);
-      expect(unconfigured.canSave, isTrue);
+      expect(unconfigured.canSave, isFalse);
       unconfigured.dispose();
+
+      final existingNickname = NicknameAvailabilityController(
+        checker: const UnconfiguredNicknameAvailabilityChecker(),
+        initialNickname: '은혜',
+        editing: true,
+      );
+      expect(existingNickname.status, NicknameCheckStatus.unchanged);
+      expect(existingNickname.canSave, isTrue);
+      existingNickname.updateInput('새이름');
+      await tester.pump(const Duration(seconds: 1));
+      expect(existingNickname.canSave, isFalse);
+      existingNickname.dispose();
     },
   );
 }

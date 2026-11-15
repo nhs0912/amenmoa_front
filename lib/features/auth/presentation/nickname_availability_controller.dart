@@ -60,10 +60,10 @@ class NicknameAvailabilityController extends ChangeNotifier {
 
   bool get canSave {
     if (_disposed || !_hasValidInput) return false;
-    if (!checker.isConfigured) return true;
-    return (_status == NicknameCheckStatus.unchanged && _isUnchanged) ||
-        (_status == NicknameCheckStatus.available &&
-            _checkedNickname == _canonical);
+    if (_status == NicknameCheckStatus.unchanged && _isUnchanged) return true;
+    return checker.isConfigured &&
+        _status == NicknameCheckStatus.available &&
+        _checkedNickname == _canonical;
   }
 
   void updateInput(String text, {bool isComposing = false}) {

@@ -11,7 +11,7 @@ abstract interface class NicknameAvailabilityChecker {
 }
 
 /// No backend has been configured yet. Never pretend a nickname is available.
-/// Existing nickname saving stays enabled until a real checker is connected.
+/// New or changed nicknames cannot be saved until a real checker is connected.
 class UnconfiguredNicknameAvailabilityChecker
     implements NicknameAvailabilityChecker {
   const UnconfiguredNicknameAvailabilityChecker();

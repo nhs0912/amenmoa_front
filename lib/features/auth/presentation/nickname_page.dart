@@ -42,6 +42,98 @@ class _NicknamePageState extends State<NicknamePage> {
   bool _saving = false;
   String? _error;
 
+  static const _successColor = Color(0xFF25815F);
+  static const _failureColor = Color(0xFFBF4B45);
+  static const _neutralColor = Color(0xFF6C7E74);
+  static const _neutralBorderColor = Color(0xFFD6DFD8);
+  static const _focusedNeutralBorderColor = Color(0xFFA7B8AD);
+
+  bool get _checkSucceeded =>
+      _availability.status == NicknameCheckStatus.available ||
+      _availability.status == NicknameCheckStatus.unchanged;
+
+  bool get _checkFailed =>
+      _availability.status == NicknameCheckStatus.taken ||
+      _availability.status == NicknameCheckStatus.error ||
+      (_availability.status == NicknameCheckStatus.unavailable &&
+          widget.availabilityChecker.isConfigured);
+
+  OutlineInputBorder _inputBorder(Color color, double width) =>
+      OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: color, width: width),
+      );
+
+  InputDecoration _nicknameDecoration() {
+    final color = _checkSucceeded
+        ? _successColor
+        : _checkFailed
+        ? _failureColor
+        : _neutralBorderColor;
+    final focusedColor = _checkSucceeded || _checkFailed
+        ? color
+        : _focusedNeutralBorderColor;
+    final borderWidth = _checkSucceeded || _checkFailed ? 1.5 : 1.0;
+    final focusedWidth = _checkSucceeded || _checkFailed ? 2.0 : 1.5;
+    final labelColor = _checkSucceeded
+        ? _successColor
+        : _checkFailed
+        ? _failureColor
+        : _neutralColor;
+    return InputDecoration(
+      labelText: '닉네임',
+      hintText: '나를 부를 이름',
+      helperText: '2~20자로 입력해 주세요.',
+      alignLabelWithHint: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+      filled: true,
+      fillColor: _checkSucceeded
+          ? const Color(0xFFF2F8F3)
+          : _checkFailed
+          ? const Color(0xFFFFF5F3)
+          : Colors.white,
+      labelStyle: TextStyle(color: labelColor),
+      floatingLabelStyle: TextStyle(color: labelColor),
+      helperStyle: const TextStyle(color: _neutralColor),
+      errorStyle: const TextStyle(color: _failureColor),
+      border: _inputBorder(color, borderWidth),
+      enabledBorder: _inputBorder(color, borderWidth),
+      focusedBorder: _inputBorder(focusedColor, focusedWidth),
+      disabledBorder: _inputBorder(color, borderWidth),
+      errorBorder: _inputBorder(_failureColor, 1.5),
+      focusedErrorBorder: _inputBorder(_failureColor, 2),
+      suffixIcon: _availability.status == NicknameCheckStatus.checking
+          ? const Padding(
+              padding: EdgeInsets.all(16),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: _neutralColor,
+                  semanticsLabel: '닉네임 중복 확인 중',
+                ),
+              ),
+            )
+          : _checkSucceeded
+          ? Icon(
+              Icons.check_circle_rounded,
+              color: _successColor,
+              semanticLabel:
+                  _availability.status == NicknameCheckStatus.unchanged
+                  ? '현재 사용 중인 닉네임'
+                  : '사용 가능한 닉네임',
+            )
+          : _checkFailed
+          ? const Icon(
+              Icons.error_outline_rounded,
+              color: _failureColor,
+              semanticLabel: '닉네임 확인 필요',
+            )
+          : null,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -125,9 +217,7 @@ class _NicknamePageState extends State<NicknamePage> {
   Widget _buildAvailabilityStatus(bool busy) {
     final status = _availability.status;
     final configured = widget.availabilityChecker.isConfigured;
-    final pending =
-        status == NicknameCheckStatus.waiting ||
-        status == NicknameCheckStatus.checking;
+    final pending = status == NicknameCheckStatus.checking;
     final retryable =
         status == NicknameCheckStatus.error ||
         (status == NicknameCheckStatus.unavailable && configured);
@@ -138,7 +228,7 @@ class _NicknamePageState extends State<NicknamePage> {
       case NicknameCheckStatus.idle:
         color = const Color(0xFF6C7E74);
         icon = Icons.info_outline;
-        message = configured ? null : '중복 확인은 준비 중이에요. 현재 닉네임 저장은 가능해요.';
+        message = configured ? null : '중복 확인 연결을 준비 중이에요.';
       case NicknameCheckStatus.waiting:
         color = const Color(0xFF6C7E74);
         icon = Icons.hourglass_empty;
@@ -146,27 +236,27 @@ class _NicknamePageState extends State<NicknamePage> {
       case NicknameCheckStatus.checking:
         color = const Color(0xFF6C7E74);
         icon = Icons.hourglass_empty;
-        message = '닉네임 중복을 확인하고 있어요.';
+        message = '중복 확인 중…';
       case NicknameCheckStatus.available:
-        color = AppTheme.seedColor;
+        color = _successColor;
         icon = Icons.check_circle_outline;
         message = '사용할 수 있는 닉네임이에요.';
       case NicknameCheckStatus.taken:
-        color = const Color(0xFF9B342F);
+        color = _failureColor;
         icon = Icons.error_outline;
         message = '이미 사용 중인 닉네임이에요.';
       case NicknameCheckStatus.unavailable:
-        color = const Color(0xFF6C7E74);
-        icon = Icons.info_outline;
+        color = configured ? _failureColor : _neutralColor;
+        icon = configured ? Icons.error_outline : Icons.info_outline;
         message = configured
             ? '지금은 중복을 확인할 수 없어요. 다시 확인해 주세요.'
-            : '중복 확인은 준비 중이에요. 현재 닉네임 저장은 가능해요.';
+            : '중복 확인 연결을 준비 중이에요.';
       case NicknameCheckStatus.error:
-        color = const Color(0xFF9B342F);
+        color = _failureColor;
         icon = Icons.error_outline;
         message = '중복 확인 중 오류가 발생했어요. 다시 시도해 주세요.';
       case NicknameCheckStatus.unchanged:
-        color = AppTheme.seedColor;
+        color = _successColor;
         icon = Icons.check_circle_outline;
         message = '현재 사용 중인 닉네임이에요.';
     }
@@ -183,17 +273,11 @@ class _NicknamePageState extends State<NicknamePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (pending)
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: color,
-                    ),
-                  )
-                else
+                  const SizedBox(width: 26)
+                else ...[
                   Icon(icon, size: 18, color: color),
-                const SizedBox(width: 8),
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
                   child: Text(
                     message,
@@ -282,7 +366,7 @@ class _NicknamePageState extends State<NicknamePage> {
                               semanticsLabel: '닉네임 $length자, 최대 20자',
                               style: TextStyle(
                                 color: length > 20
-                                    ? Theme.of(context).colorScheme.error
+                                    ? _failureColor
                                     : const Color(0xFF6C7E74),
                               ),
                             );
@@ -291,12 +375,8 @@ class _NicknamePageState extends State<NicknamePage> {
                       textCapitalization: TextCapitalization.none,
                       autofillHints: const [AutofillHints.nickname],
                       autocorrect: false,
-                      decoration: const InputDecoration(
-                        labelText: '닉네임',
-                        hintText: '나를 부를 이름',
-                        helperText: '2~20자로 입력해 주세요.',
-                        alignLabelWithHint: true,
-                      ),
+                      decoration: _nicknameDecoration(),
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
                       validator: validateNickname,
                       onFieldSubmitted: (_) => unawaited(_save()),
                       onChanged: (_) {
@@ -325,6 +405,12 @@ class _NicknamePageState extends State<NicknamePage> {
                   onPressed: busy || !_availability.canSave ? null : _save,
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(double.infinity, 52),
+                    disabledBackgroundColor: const Color(0xFFE3E9E3),
+                    disabledForegroundColor: const Color(0xFF849389),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -335,20 +421,12 @@ class _NicknamePageState extends State<NicknamePage> {
                           height: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Colors.white,
+                            color: AppTheme.seedColor,
                           ),
                         ),
                         const SizedBox(width: 10),
                       ],
-                      Flexible(
-                        child: Text(
-                          _saving
-                              ? '저장하는 중'
-                              : widget.editing
-                              ? '닉네임 저장'
-                              : '아멘모아 시작하기',
-                        ),
-                      ),
+                      Flexible(child: Text(_saving ? '저장하는 중' : '닉네임 저장')),
                     ],
                   ),
                 ),
