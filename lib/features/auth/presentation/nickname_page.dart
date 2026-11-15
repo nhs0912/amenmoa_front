@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../app/theme/app_theme.dart';
+import '../domain/nickname_availability.dart';
 import '../domain/session_repository.dart';
 import 'brand_logo.dart';
+import 'nickname_availability_controller.dart';
 
 /// Collects the authenticated user's profile name before opening the app.
 /// The page delegates persistence to the account repository through [onSave].
@@ -18,6 +20,7 @@ class NicknamePage extends StatefulWidget {
     required this.onSignOut,
     this.signingOut = false,
     this.editing = false,
+    this.availabilityChecker = const UnconfiguredNicknameAvailabilityChecker(),
   });
 
   final String? initialNickname;
@@ -26,6 +29,7 @@ class NicknamePage extends StatefulWidget {
   final VoidCallback onSignOut;
   final bool signingOut;
   final bool editing;
+  final NicknameAvailabilityChecker availabilityChecker;
 
   @override
   State<NicknamePage> createState() => _NicknamePageState();
@@ -34,6 +38,7 @@ class NicknamePage extends StatefulWidget {
 class _NicknamePageState extends State<NicknamePage> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nickname;
+  late NicknameAvailabilityController _availability;
   bool _saving = false;
   String? _error;
 
@@ -41,16 +46,58 @@ class _NicknamePageState extends State<NicknamePage> {
   void initState() {
     super.initState();
     _nickname = TextEditingController(text: widget.initialNickname ?? '');
+    _setUpAvailability();
+    _nickname.addListener(_handleInputChanged);
+  }
+
+  void _setUpAvailability() {
+    _availability = NicknameAvailabilityController(
+      checker: widget.availabilityChecker,
+      initialNickname: widget.editing ? widget.initialNickname : null,
+      editing: widget.editing,
+    );
+    _availability.addListener(_handleAvailabilityChanged);
+    _handleInputChanged();
+  }
+
+  void _handleInputChanged() {
+    final value = _nickname.value;
+    _availability.updateInput(
+      value.text,
+      isComposing: value.composing.isValid && !value.composing.isCollapsed,
+    );
+  }
+
+  void _handleAvailabilityChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(covariant NicknamePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.availabilityChecker != widget.availabilityChecker ||
+        oldWidget.initialNickname != widget.initialNickname ||
+        oldWidget.editing != widget.editing) {
+      _availability.removeListener(_handleAvailabilityChanged);
+      _availability.dispose();
+      _setUpAvailability();
+    }
   }
 
   @override
   void dispose() {
+    _nickname.removeListener(_handleInputChanged);
+    _availability.removeListener(_handleAvailabilityChanged);
+    _availability.dispose();
     _nickname.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    if (_saving || widget.signingOut || !_formKey.currentState!.validate()) {
+    if (_saving ||
+        widget.signingOut ||
+        !_formKey.currentState!.validate() ||
+        !_availability.canSave) {
       return;
     }
     final nickname = _nickname.text.trim();
@@ -73,6 +120,98 @@ class _NicknamePageState extends State<NicknamePage> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Widget _buildAvailabilityStatus(bool busy) {
+    final status = _availability.status;
+    final configured = widget.availabilityChecker.isConfigured;
+    final pending =
+        status == NicknameCheckStatus.waiting ||
+        status == NicknameCheckStatus.checking;
+    final retryable =
+        status == NicknameCheckStatus.error ||
+        (status == NicknameCheckStatus.unavailable && configured);
+    final Color color;
+    final String? message;
+    final IconData icon;
+    switch (status) {
+      case NicknameCheckStatus.idle:
+        color = const Color(0xFF6C7E74);
+        icon = Icons.info_outline;
+        message = configured ? null : '중복 확인은 준비 중이에요. 현재 닉네임 저장은 가능해요.';
+      case NicknameCheckStatus.waiting:
+        color = const Color(0xFF6C7E74);
+        icon = Icons.hourglass_empty;
+        message = '입력이 끝나면 중복을 확인할게요.';
+      case NicknameCheckStatus.checking:
+        color = const Color(0xFF6C7E74);
+        icon = Icons.hourglass_empty;
+        message = '닉네임 중복을 확인하고 있어요.';
+      case NicknameCheckStatus.available:
+        color = AppTheme.seedColor;
+        icon = Icons.check_circle_outline;
+        message = '사용할 수 있는 닉네임이에요.';
+      case NicknameCheckStatus.taken:
+        color = const Color(0xFF9B342F);
+        icon = Icons.error_outline;
+        message = '이미 사용 중인 닉네임이에요.';
+      case NicknameCheckStatus.unavailable:
+        color = const Color(0xFF6C7E74);
+        icon = Icons.info_outline;
+        message = configured
+            ? '지금은 중복을 확인할 수 없어요. 다시 확인해 주세요.'
+            : '중복 확인은 준비 중이에요. 현재 닉네임 저장은 가능해요.';
+      case NicknameCheckStatus.error:
+        color = const Color(0xFF9B342F);
+        icon = Icons.error_outline;
+        message = '중복 확인 중 오류가 발생했어요. 다시 시도해 주세요.';
+      case NicknameCheckStatus.unchanged:
+        color = AppTheme.seedColor;
+        icon = Icons.check_circle_outline;
+        message = '현재 사용 중인 닉네임이에요.';
+    }
+    if (message == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            liveRegion: true,
+            child: Row(
+              key: const ValueKey('nickname-availability-status'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (pending)
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: color,
+                    ),
+                  )
+                else
+                  Icon(icon, size: 18, color: color),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: TextStyle(color: color, height: 1.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (retryable)
+            TextButton(
+              key: const ValueKey('nickname-availability-retry'),
+              onPressed: busy ? null : () => unawaited(_availability.retry()),
+              child: const Text('다시 확인'),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -166,6 +305,7 @@ class _NicknamePageState extends State<NicknamePage> {
                     ),
                   ),
                 ),
+                _buildAvailabilityStatus(busy),
                 if (_error != null) ...[
                   const SizedBox(height: 16),
                   Semantics(
@@ -182,7 +322,7 @@ class _NicknamePageState extends State<NicknamePage> {
                 const SizedBox(height: 24),
                 FilledButton(
                   key: const ValueKey('nickname-submit'),
-                  onPressed: busy ? null : _save,
+                  onPressed: busy || !_availability.canSave ? null : _save,
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(double.infinity, 52),
                   ),

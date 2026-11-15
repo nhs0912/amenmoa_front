@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_shell.dart';
 import '../../../app/theme/app_theme.dart';
+import '../domain/nickname_availability.dart';
 import '../domain/session_repository.dart';
 import 'brand_logo.dart';
 import 'email_auth_pages.dart';
@@ -13,10 +14,13 @@ class StartupGate extends StatefulWidget {
   const StartupGate({
     super.key,
     this.sessionRepository = const UnconfiguredSessionRepository(),
+    this.nicknameAvailabilityChecker =
+        const UnconfiguredNicknameAvailabilityChecker(),
     this.minimumSplashDuration = const Duration(milliseconds: 1600),
   });
 
   final SessionRepository sessionRepository;
+  final NicknameAvailabilityChecker nicknameAvailabilityChecker;
   final Duration minimumSplashDuration;
 
   @override
@@ -226,6 +230,7 @@ class _StartupGateState extends State<StartupGate> with WidgetsBindingObserver {
         builder: (pageContext) => NicknamePage(
           editing: true,
           initialNickname: current.nickname,
+          availabilityChecker: widget.nicknameAvailabilityChecker,
           onSave: _saveNickname,
           onCompleted: (updated) {
             _completeNickname(updated);
@@ -280,6 +285,7 @@ class _StartupGateState extends State<StartupGate> with WidgetsBindingObserver {
       return NicknamePage(
         key: ValueKey('nickname-${_session!.userId}'),
         initialNickname: _session!.nickname,
+        availabilityChecker: widget.nicknameAvailabilityChecker,
         onSave: _saveNickname,
         onCompleted: _completeNickname,
         onSignOut: _exitToLogin,
