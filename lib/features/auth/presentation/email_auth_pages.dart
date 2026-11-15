@@ -4,19 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../app/theme/app_theme.dart';
+import '../domain/email_availability.dart';
 import '../domain/session_repository.dart';
+import 'availability_input_decoration.dart';
 import 'brand_logo.dart';
+import 'email_availability_controller.dart';
 
 const _muted = Color(0xFF6C7E74);
-
-String? _validateEmail(String? value) {
-  final email = value?.trim() ?? '';
-  if (email.isEmpty) return '이메일 주소를 입력해 주세요.';
-  if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
-    return '이메일 주소를 확인해 주세요.';
-  }
-  return null;
-}
 
 String _errorMessage(Object error) => error is AuthFailure
     ? error.message
@@ -27,9 +21,12 @@ class EmailLoginPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.onAuthenticated,
+    this.emailAvailabilityChecker =
+        const UnconfiguredEmailAvailabilityChecker(),
   });
 
   final EmailAuthRepository repository;
+  final EmailAvailabilityChecker emailAvailabilityChecker;
   final ValueChanged<AppSession> onAuthenticated;
 
   @override
@@ -98,7 +95,7 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
               autocorrect: false,
               enableSuggestions: false,
               decoration: const InputDecoration(labelText: '이메일'),
-              validator: _validateEmail,
+              validator: validateEmail,
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -152,6 +149,7 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
                           repository: widget.repository,
                           onAuthenticated: widget.onAuthenticated,
                           initialEmail: _email.text.trim(),
+                          availabilityChecker: widget.emailAvailabilityChecker,
                         ),
                       ),
                     ),
@@ -170,9 +168,11 @@ class EmailSignUpPage extends StatefulWidget {
     required this.repository,
     required this.onAuthenticated,
     this.initialEmail = '',
+    this.availabilityChecker = const UnconfiguredEmailAvailabilityChecker(),
   });
 
   final EmailAuthRepository repository;
+  final EmailAvailabilityChecker availabilityChecker;
   final ValueChanged<AppSession> onAuthenticated;
   final String initialEmail;
 
@@ -183,6 +183,7 @@ class EmailSignUpPage extends StatefulWidget {
 class _EmailSignUpPageState extends State<EmailSignUpPage> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _email;
+  late EmailAvailabilityController _availability;
   final _password = TextEditingController();
   final _confirmation = TextEditingController();
   bool _obscurePassword = true;
@@ -194,18 +195,163 @@ class _EmailSignUpPageState extends State<EmailSignUpPage> {
   void initState() {
     super.initState();
     _email = TextEditingController(text: widget.initialEmail);
+    _setUpAvailability();
+    _email.addListener(_handleEmailInputChanged);
+  }
+
+  void _setUpAvailability() {
+    _availability = EmailAvailabilityController(
+      checker: widget.availabilityChecker,
+    );
+    _availability.addListener(_handleAvailabilityChanged);
+    _handleEmailInputChanged();
+  }
+
+  void _handleEmailInputChanged() {
+    final value = _email.value;
+    _availability.updateInput(
+      value.text,
+      isComposing: value.composing.isValid && !value.composing.isCollapsed,
+    );
+  }
+
+  void _handleAvailabilityChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(covariant EmailSignUpPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.availabilityChecker != widget.availabilityChecker) {
+      _availability.removeListener(_handleAvailabilityChanged);
+      _availability.dispose();
+      _setUpAvailability();
+    }
   }
 
   @override
   void dispose() {
+    _email.removeListener(_handleEmailInputChanged);
+    _availability.removeListener(_handleAvailabilityChanged);
+    _availability.dispose();
     _email.dispose();
     _password.dispose();
     _confirmation.dispose();
     super.dispose();
   }
 
+  InputDecoration _emailDecoration() {
+    final status = _availability.status;
+    final failed =
+        status == EmailCheckStatus.taken ||
+        status == EmailCheckStatus.error ||
+        (status == EmailCheckStatus.unavailable &&
+            widget.availabilityChecker.isConfigured);
+    return availabilityInputDecoration(
+      labelText: '이메일 주소',
+      hintText: 'name@example.com',
+      state: status == EmailCheckStatus.checking
+          ? AvailabilityInputState.checking
+          : status == EmailCheckStatus.available
+          ? AvailabilityInputState.available
+          : failed
+          ? AvailabilityInputState.invalid
+          : AvailabilityInputState.neutral,
+      checkingSemanticLabel: '이메일 중복 확인 중',
+      successSemanticLabel: '사용 가능한 이메일',
+      failureSemanticLabel: '이메일 확인 필요',
+    );
+  }
+
+  Widget _buildEmailAvailabilityStatus() {
+    final status = _availability.status;
+    final configured = widget.availabilityChecker.isConfigured;
+    final (color, message, icon) = switch (status) {
+      EmailCheckStatus.idle => (
+        availabilityNeutralColor,
+        configured ? null : '중복 확인 연결을 준비 중이에요.',
+        Icons.info_outline,
+      ),
+      EmailCheckStatus.waiting => (
+        availabilityNeutralColor,
+        '입력이 끝나면 중복을 확인할게요.',
+        Icons.hourglass_empty,
+      ),
+      EmailCheckStatus.checking => (
+        availabilityNeutralColor,
+        '이메일 중복 확인 중…',
+        Icons.hourglass_empty,
+      ),
+      EmailCheckStatus.available => (
+        availabilitySuccessColor,
+        '사용할 수 있는 이메일이에요.',
+        Icons.check_circle_outline,
+      ),
+      EmailCheckStatus.taken => (
+        availabilityFailureColor,
+        '이미 가입된 이메일이에요.',
+        Icons.error_outline,
+      ),
+      EmailCheckStatus.unavailable => (
+        configured ? availabilityFailureColor : availabilityNeutralColor,
+        configured
+            ? '지금은 이메일 중복을 확인할 수 없어요. 다시 확인해 주세요.'
+            : '중복 확인 연결을 준비 중이에요.',
+        configured ? Icons.error_outline : Icons.info_outline,
+      ),
+      EmailCheckStatus.error => (
+        availabilityFailureColor,
+        '이메일 중복 확인 중 오류가 발생했어요. 다시 시도해 주세요.',
+        Icons.error_outline,
+      ),
+    };
+    if (message == null) return const SizedBox.shrink();
+    final retryable =
+        status == EmailCheckStatus.error ||
+        (status == EmailCheckStatus.unavailable && configured);
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            liveRegion: true,
+            child: Row(
+              key: const ValueKey('email-availability-status'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (status == EmailCheckStatus.checking)
+                  const SizedBox(width: 26)
+                else ...[
+                  Icon(icon, size: 18, color: color),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: Text(
+                    message,
+                    style: TextStyle(color: color, height: 1.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (retryable)
+            TextButton(
+              key: const ValueKey('email-availability-retry'),
+              onPressed: _busy ? null : () => unawaited(_availability.retry()),
+              child: const Text('다시 확인'),
+            ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _submit() async {
-    if (_busy || !_formKey.currentState!.validate()) return;
+    if (_busy ||
+        !_formKey.currentState!.validate() ||
+        !_availability.canSubmit) {
+      return;
+    }
     FocusScope.of(context).unfocus();
     final email = _email.text.trim();
     final password = _password.text;
@@ -225,6 +371,7 @@ class _EmailSignUpPageState extends State<EmailSignUpPage> {
             builder: (_) => EmailVerificationPage(
               repository: widget.repository,
               email: email,
+              emailAvailabilityChecker: widget.availabilityChecker,
               pendingPassword:
                   widget.repository.verificationMethod ==
                       EmailVerificationMethod.link
@@ -265,9 +412,14 @@ class _EmailSignUpPageState extends State<EmailSignUpPage> {
               ],
               autocorrect: false,
               enableSuggestions: false,
-              decoration: const InputDecoration(labelText: '이메일 주소'),
-              validator: _validateEmail,
+              decoration: _emailDecoration(),
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              validator: validateEmail,
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
             ),
+            _buildEmailAvailabilityStatus(),
             const SizedBox(height: 16),
             TextFormField(
               key: const ValueKey('email-signup-password'),
@@ -351,7 +503,7 @@ class _EmailSignUpPageState extends State<EmailSignUpPage> {
               label: '인증 메일 보내기',
               busyLabel: '인증 메일 보내는 중',
               busy: _busy,
-              onPressed: _submit,
+              onPressed: _availability.canSubmit ? _submit : null,
             ),
             const SizedBox(height: 16),
             TextButton(
@@ -362,6 +514,7 @@ class _EmailSignUpPageState extends State<EmailSignUpPage> {
                         builder: (_) => EmailLoginPage(
                           repository: widget.repository,
                           onAuthenticated: widget.onAuthenticated,
+                          emailAvailabilityChecker: widget.availabilityChecker,
                         ),
                       ),
                     ),
@@ -381,9 +534,12 @@ class EmailVerificationPage extends StatefulWidget {
     required this.email,
     required this.onAuthenticated,
     this.pendingPassword,
+    this.emailAvailabilityChecker =
+        const UnconfiguredEmailAvailabilityChecker(),
   });
 
   final EmailAuthRepository repository;
+  final EmailAvailabilityChecker emailAvailabilityChecker;
   final String email;
   final String? pendingPassword;
   final ValueChanged<AppSession> onAuthenticated;
@@ -497,6 +653,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
           builder: (_) => EmailLoginPage(
             repository: widget.repository,
             onAuthenticated: widget.onAuthenticated,
+            emailAvailabilityChecker: widget.emailAvailabilityChecker,
           ),
         ),
       ),
@@ -621,6 +778,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
                         repository: widget.repository,
                         initialEmail: widget.email,
                         onAuthenticated: widget.onAuthenticated,
+                        availabilityChecker: widget.emailAvailabilityChecker,
                       ),
                     ),
                   ),

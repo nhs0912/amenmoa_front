@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../../app/theme/app_theme.dart';
 import '../domain/nickname_availability.dart';
 import '../domain/session_repository.dart';
+import 'availability_input_decoration.dart';
 import 'brand_logo.dart';
 import 'nickname_availability_controller.dart';
 
@@ -42,11 +43,9 @@ class _NicknamePageState extends State<NicknamePage> {
   bool _saving = false;
   String? _error;
 
-  static const _successColor = Color(0xFF25815F);
-  static const _failureColor = Color(0xFFBF4B45);
-  static const _neutralColor = Color(0xFF6C7E74);
-  static const _neutralBorderColor = Color(0xFFD6DFD8);
-  static const _focusedNeutralBorderColor = Color(0xFFA7B8AD);
+  static const _successColor = availabilitySuccessColor;
+  static const _failureColor = availabilityFailureColor;
+  static const _neutralColor = availabilityNeutralColor;
 
   bool get _checkSucceeded =>
       _availability.status == NicknameCheckStatus.available ||
@@ -58,81 +57,23 @@ class _NicknamePageState extends State<NicknamePage> {
       (_availability.status == NicknameCheckStatus.unavailable &&
           widget.availabilityChecker.isConfigured);
 
-  OutlineInputBorder _inputBorder(Color color, double width) =>
-      OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: color, width: width),
-      );
-
-  InputDecoration _nicknameDecoration() {
-    final color = _checkSucceeded
-        ? _successColor
+  InputDecoration _nicknameDecoration() => availabilityInputDecoration(
+    labelText: '닉네임',
+    hintText: '나를 부를 이름',
+    helperText: '2~20자로 입력해 주세요.',
+    state: _availability.status == NicknameCheckStatus.checking
+        ? AvailabilityInputState.checking
+        : _checkSucceeded
+        ? AvailabilityInputState.available
         : _checkFailed
-        ? _failureColor
-        : _neutralBorderColor;
-    final focusedColor = _checkSucceeded || _checkFailed
-        ? color
-        : _focusedNeutralBorderColor;
-    final borderWidth = _checkSucceeded || _checkFailed ? 1.5 : 1.0;
-    final focusedWidth = _checkSucceeded || _checkFailed ? 2.0 : 1.5;
-    final labelColor = _checkSucceeded
-        ? _successColor
-        : _checkFailed
-        ? _failureColor
-        : _neutralColor;
-    return InputDecoration(
-      labelText: '닉네임',
-      hintText: '나를 부를 이름',
-      helperText: '2~20자로 입력해 주세요.',
-      alignLabelWithHint: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-      filled: true,
-      fillColor: _checkSucceeded
-          ? const Color(0xFFF2F8F3)
-          : _checkFailed
-          ? const Color(0xFFFFF5F3)
-          : Colors.white,
-      labelStyle: TextStyle(color: labelColor),
-      floatingLabelStyle: TextStyle(color: labelColor),
-      helperStyle: const TextStyle(color: _neutralColor),
-      errorStyle: const TextStyle(color: _failureColor),
-      border: _inputBorder(color, borderWidth),
-      enabledBorder: _inputBorder(color, borderWidth),
-      focusedBorder: _inputBorder(focusedColor, focusedWidth),
-      disabledBorder: _inputBorder(color, borderWidth),
-      errorBorder: _inputBorder(_failureColor, 1.5),
-      focusedErrorBorder: _inputBorder(_failureColor, 2),
-      suffixIcon: _availability.status == NicknameCheckStatus.checking
-          ? const Padding(
-              padding: EdgeInsets.all(16),
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: _neutralColor,
-                  semanticsLabel: '닉네임 중복 확인 중',
-                ),
-              ),
-            )
-          : _checkSucceeded
-          ? Icon(
-              Icons.check_circle_rounded,
-              color: _successColor,
-              semanticLabel:
-                  _availability.status == NicknameCheckStatus.unchanged
-                  ? '현재 사용 중인 닉네임'
-                  : '사용 가능한 닉네임',
-            )
-          : _checkFailed
-          ? const Icon(
-              Icons.error_outline_rounded,
-              color: _failureColor,
-              semanticLabel: '닉네임 확인 필요',
-            )
-          : null,
-    );
-  }
+        ? AvailabilityInputState.invalid
+        : AvailabilityInputState.neutral,
+    checkingSemanticLabel: '닉네임 중복 확인 중',
+    successSemanticLabel: _availability.status == NicknameCheckStatus.unchanged
+        ? '현재 사용 중인 닉네임'
+        : '사용 가능한 닉네임',
+    failureSemanticLabel: '닉네임 확인 필요',
+  );
 
   @override
   void initState() {

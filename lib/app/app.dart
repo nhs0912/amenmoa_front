@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import '../features/auth/domain/email_availability.dart';
 import '../features/auth/domain/nickname_availability.dart';
 import '../features/auth/domain/session_repository.dart';
 import '../features/auth/presentation/startup_gate.dart';
@@ -10,12 +11,15 @@ class AmenMoaApp extends StatelessWidget {
   const AmenMoaApp({
     super.key,
     this.sessionRepository = const UnconfiguredSessionRepository(),
+    this.emailAvailabilityChecker =
+        const UnconfiguredEmailAvailabilityChecker(),
     this.nicknameAvailabilityChecker =
         const UnconfiguredNicknameAvailabilityChecker(),
     this.minimumSplashDuration = const Duration(milliseconds: 1600),
   });
 
   final SessionRepository sessionRepository;
+  final EmailAvailabilityChecker emailAvailabilityChecker;
   final NicknameAvailabilityChecker nicknameAvailabilityChecker;
   final Duration minimumSplashDuration;
 
@@ -29,6 +33,7 @@ class AmenMoaApp extends StatelessWidget {
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       home: StartupGate(
         sessionRepository: sessionRepository,
+        emailAvailabilityChecker: emailAvailabilityChecker,
         nicknameAvailabilityChecker: nicknameAvailabilityChecker,
         minimumSplashDuration: minimumSplashDuration,
       ),

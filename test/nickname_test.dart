@@ -2,11 +2,21 @@ import 'dart:async';
 
 import 'package:amenmoa_front/app/app.dart';
 import 'package:amenmoa_front/app/app_shell.dart';
+import 'package:amenmoa_front/features/auth/domain/email_availability.dart';
 import 'package:amenmoa_front/features/auth/domain/nickname_availability.dart';
 import 'package:amenmoa_front/features/auth/domain/session_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class AvailableEmailChecker implements EmailAvailabilityChecker {
+  const AvailableEmailChecker();
+  @override
+  bool get isConfigured => true;
+  @override
+  Future<EmailAvailability> check(String email) async =>
+      EmailAvailability.available;
+}
 
 class AvailableNicknameChecker implements NicknameAvailabilityChecker {
   const AvailableNicknameChecker();
@@ -125,6 +135,7 @@ Future<void> mountApp(WidgetTester tester, SessionRepository repository) async {
     AmenMoaApp(
       sessionRepository: repository,
       nicknameAvailabilityChecker: const AvailableNicknameChecker(),
+      emailAvailabilityChecker: const AvailableEmailChecker(),
       minimumSplashDuration: Duration.zero,
     ),
   );
@@ -153,6 +164,7 @@ void main() {
         find.byKey(const ValueKey('email-signup-email')),
         'seoyun@example.com',
       );
+      await tester.pump(const Duration(seconds: 1));
       await tester.enterText(
         find.byKey(const ValueKey('email-signup-password')),
         'Peaceful2026!',

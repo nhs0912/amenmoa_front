@@ -2,11 +2,21 @@ import 'dart:async';
 
 import 'package:amenmoa_front/app/app.dart';
 import 'package:amenmoa_front/app/app_shell.dart';
+import 'package:amenmoa_front/features/auth/domain/email_availability.dart';
 import 'package:amenmoa_front/features/auth/domain/session_repository.dart';
 import 'package:amenmoa_front/features/auth/presentation/email_auth_pages.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class AvailableEmailChecker implements EmailAvailabilityChecker {
+  const AvailableEmailChecker();
+  @override
+  bool get isConfigured => true;
+  @override
+  Future<EmailAvailability> check(String email) async =>
+      EmailAvailability.available;
+}
 
 class FakeEmailAuthRepository implements EmailAuthRepository {
   final changes = StreamController<AppSession?>.broadcast();
@@ -126,6 +136,7 @@ Future<void> mountApp(
   await tester.pumpWidget(
     AmenMoaApp(
       sessionRepository: repository,
+      emailAvailabilityChecker: const AvailableEmailChecker(),
       minimumSplashDuration: Duration.zero,
     ),
   );
@@ -186,6 +197,7 @@ void main() {
         find.byKey(const ValueKey('email-signup-email')),
         'seoyun@example.com',
       );
+      await tester.pump(const Duration(seconds: 1));
       await tester.enterText(
         find.byKey(const ValueKey('email-signup-password')),
         'Peaceful2026!',
@@ -271,6 +283,7 @@ void main() {
         find.byKey(const ValueKey('email-signup-email')),
         'seoyun@example.com',
       );
+      await tester.pump(const Duration(seconds: 1));
       await tester.enterText(
         find.byKey(const ValueKey('email-signup-password')),
         'Peaceful2026!',

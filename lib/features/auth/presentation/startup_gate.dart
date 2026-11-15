@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_shell.dart';
 import '../../../app/theme/app_theme.dart';
+import '../domain/email_availability.dart';
 import '../domain/nickname_availability.dart';
 import '../domain/session_repository.dart';
 import 'brand_logo.dart';
@@ -14,12 +15,15 @@ class StartupGate extends StatefulWidget {
   const StartupGate({
     super.key,
     this.sessionRepository = const UnconfiguredSessionRepository(),
+    this.emailAvailabilityChecker =
+        const UnconfiguredEmailAvailabilityChecker(),
     this.nicknameAvailabilityChecker =
         const UnconfiguredNicknameAvailabilityChecker(),
     this.minimumSplashDuration = const Duration(milliseconds: 1600),
   });
 
   final SessionRepository sessionRepository;
+  final EmailAvailabilityChecker emailAvailabilityChecker;
   final NicknameAvailabilityChecker nicknameAvailabilityChecker;
   final Duration minimumSplashDuration;
 
@@ -268,10 +272,12 @@ class _StartupGateState extends State<StartupGate> with WidgetsBindingObserver {
         builder: (_) => signUp
             ? EmailSignUpPage(
                 repository: _emailAuth,
+                availabilityChecker: widget.emailAvailabilityChecker,
                 onAuthenticated: _completeSignIn,
               )
             : EmailLoginPage(
                 repository: _emailAuth,
+                emailAvailabilityChecker: widget.emailAvailabilityChecker,
                 onAuthenticated: _completeSignIn,
               ),
       ),
